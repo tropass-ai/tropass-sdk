@@ -1,0 +1,63 @@
+[project]
+name = "tropass-sdk"
+version = "1.0.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10,<4"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "pytest-xdist>=3.8.0",
+    "ruff>=0.14.13",
+]
+
+[tool.mypy]
+files = ["tropass_sdk", "tests"]
+python_version = "3.10"
+strict = true
+pretty = true
+show_error_codes = true
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "EM",
+    "FBT",
+    "TRY003",
+    "FIX002",
+    "TD003",
+    "D1",
+    "D106",
+    "D203",
+    "D213",
+    "G004",
+    "FA",
+    "COM812",
+    "ISC001",
+]
+
+[tool.ruff.lint.isort]
+no-lines-before = ["standard-library", "local-folder"]
+lines-after-imports = 2
+
+[tool.ruff.lint.extend-per-file-ignores]
+"tests/*.py" = ["S101", "S311"]
+"examples/*.py" = ["INP001"]
+
+[tool.coverage.report]
+exclude_also = ["if typing.TYPE_CHECKING:", 'class \w+\(typing.Protocol\):']
+omit = ["tests/*"]
+
+[tool.pytest.ini_options]
+addopts = '--cov=. -p no:warnings --cov-report term-missing'

@@ -1,9 +1,35 @@
 [project]
 name = "tropass-sdk"
 version = "1.0.0"
-description = "Add your description here"
+description = "Tropass SDK helps you develop and manage your models for Tropass platform"
 readme = "README.md"
 requires-python = ">=3.10,<4"
+keywords = [
+    "python",
+    "ai",
+    "tropass",
+    "models",
+    "ai-model",
+    "ai-sdk",
+    "python-sdk",
+    "llm",
+]
+classifiers = [
+    "Typing :: Typed",
+    "Topic :: Software Development :: Build Tools",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft",
+    "Operating System :: POSIX :: Linux",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
 dependencies = []
 
 [dependency-groups]

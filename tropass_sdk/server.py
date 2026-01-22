@@ -5,7 +5,6 @@ from collections.abc import Callable
 from typing import Any
 
 import fastapi
-import uvicorn
 from microbootstrap.bootstrappers.fastapi import FastApiBootstrapper
 
 from tropass_sdk.schemas.model_contract_schema import MlModelResponse
@@ -18,12 +17,14 @@ class ModelServer:
     model_name: str
     model_description: str
     model_version: str
+    debug: bool = dataclasses.field(default=False)
 
     def __post_init__(self) -> None:
         self.settings = ModelServerSettings(
             service_name=self.model_name,
             service_description=self.model_description,
             service_version=self.model_version,
+            service_debug=self.debug,
             opentelemetry_container_name=self.model_name,
         )
 
@@ -46,6 +47,3 @@ class ModelServer:
         router = self._setup_routes()
         fastapi_application.include_router(router)
         return fastapi_application
-
-    def run(self) -> None:
-        uvicorn.run(self.build_application(), host=self.settings.server_host, port=self.settings.server_port)

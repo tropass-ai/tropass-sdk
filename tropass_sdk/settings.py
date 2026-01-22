@@ -12,6 +12,3 @@ class ModelServerSettings(FastApiSettings):
     opentelemetry_container_name: str = "model-server"
     server_host: str = "0.0.0.0"  # noqa: S104
     server_port: int = 8000
-
-
-settings = ModelServerSettings()

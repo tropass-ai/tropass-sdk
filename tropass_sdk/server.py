@@ -7,7 +7,7 @@ from typing import Any
 import fastapi
 from microbootstrap.bootstrappers.fastapi import FastApiBootstrapper
 
-from tropass_sdk.schemas.model_contract_schema import MlModelResponse
+from tropass_sdk.schemas.model_contract_schema import MLModelRequestSchema, MLModelResponseSchema
 from tropass_sdk.settings import ModelServerSettings
 
 
@@ -31,13 +31,13 @@ class ModelServer:
     def _setup_routes(self) -> fastapi.APIRouter:
         router: typing.Final = fastapi.APIRouter()
 
-        @router.post("/prediction", response_model=MlModelResponse)
-        async def predict(data: dict[str, Any]) -> MlModelResponse:
+        @router.post("/prediction", response_model=MLModelResponseSchema)
+        async def predict(data: MLModelRequestSchema) -> MLModelResponseSchema:
             if inspect.iscoroutinefunction(self.model_func):
                 result = await self.model_func(data)
             else:
                 result = self.model_func(data)
-            return typing.cast("MlModelResponse", result)
+            return typing.cast("MLModelResponseSchema", result)
 
         return router
 

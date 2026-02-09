@@ -18,13 +18,13 @@
 
 ```bash
 # Для pip
-pip install tropass-sdk
+pip install tropass-sdk[server]
 
 # Для uv
-uv add tropass-sdk
+uv add tropass-sdk[server]
 
 # Для poetry
-poetry add tropass-sdk
+poetry add tropass-sdk[server]
 
 ```
 

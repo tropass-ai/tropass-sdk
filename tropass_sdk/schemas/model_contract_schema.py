@@ -4,43 +4,56 @@ import typing
 
 from pydantic import BaseModel
 
-from tropass_sdk.schemas.common import DescriptionType
+from tropass_sdk.schemas.common import DescriptionTypeEnum, InputFieldTypeEnum
 
 
-class ModelSeriesData(BaseModel):
+class ModelSeriesDataSchema(BaseModel):
     legend_name: str
     plot_values: list[float]
 
 
-class ModelPlotData(BaseModel):
+class ModelPlotDataSchema(BaseModel):
     x_axis_values: list[typing.Any]
-    series_data: list[ModelSeriesData]
+    series_data: list[ModelSeriesDataSchema]
 
 
-class ModelMediaItem(BaseModel):
+class ModelMediaItemSchema(BaseModel):
     file_name: str
     local_abs_path: str
 
 
-class ModelPrimaryData(BaseModel):
-    plot_data: ModelPlotData
-    media: list[ModelMediaItem] | None = None
+class ModelPrimaryDataSchema(BaseModel):
+    plot_data: ModelPlotDataSchema
+    media: list[ModelMediaItemSchema] | None = None
 
 
-class ModelDescription(BaseModel):
+class ModelDescriptionSchema(BaseModel):
     content: str
-    description_type: DescriptionType
+    description_type: DescriptionTypeEnum
 
 
-class ModelPanelOutput(BaseModel):
+class ModelPanelOutputSchema(BaseModel):
     panel_output_name: str
     panel_type: str
-    primary_data: ModelPrimaryData
+    primary_data: ModelPrimaryDataSchema
 
-    description: ModelDescription | None = None
-    attachments: list[ModelMediaItem] | None = None
+    description: ModelDescriptionSchema | None = None
+    attachments: list[ModelMediaItemSchema] | None = None
     panel_show_order: int | None = None
 
 
-class MlModelResponse(BaseModel):
-    panel_items: list[ModelPanelOutput]
+class MLModelResponseSchema(BaseModel):
+    panel_items: list[ModelPanelOutputSchema]
+
+
+class MLModelRequestDataSchema(BaseModel):
+    input_field_name: str
+    input_field_value: list[typing.Any]
+    input_field_type: InputFieldTypeEnum
+
+
+class MLModelRequestSchema(BaseModel):
+    data: list[MLModelRequestDataSchema]
+    version: str
+    person_id: str
+    path_temp_folder: str

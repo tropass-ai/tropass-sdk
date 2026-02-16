@@ -28,16 +28,10 @@ async def test_async_server() -> None:
     client = TestClient(app)
 
     request_data = {
-        "data": [
-            {
-                "input_field_name": "test_field",
-                "input_field_value": ["test_value"],
-                "input_field_type": "text",
-            }
-        ],
-        "version": "1.0.0",
-        "person_id": "test-person-id",
-        "path_temp_folder": "/tmp/test",  # noqa: S108
+        "input_data": {
+            "test_field": ["test_value"],
+        },
+        "files_directory_path": "/tmp/test",  # noqa: S108
     }
 
     response = client.post("/prediction", json=request_data)
@@ -58,16 +52,10 @@ def test_sync_server() -> None:
     client = TestClient(app)
 
     request_data = {
-        "data": [
-            {
-                "input_field_name": "test_field",
-                "input_field_value": ["test_value"],
-                "input_field_type": "text",
-            }
-        ],
-        "version": "1.0.0",
-        "person_id": "test-person-id",
-        "path_temp_folder": "/tmp/test",  # noqa: S108
+        "input_data": {
+            "test_field": ["test_value"],
+        },
+        "files_directory_path": "/tmp/test",  # noqa: S108
     }
 
     response = client.post("/prediction", json=request_data)

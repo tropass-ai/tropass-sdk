@@ -2,7 +2,6 @@ import dataclasses
 import inspect
 import typing
 from collections.abc import Callable
-from typing import Any
 
 import fastapi
 from microbootstrap.bootstrappers.fastapi import FastApiBootstrapper
@@ -13,7 +12,7 @@ from tropass_sdk.settings import ModelServerSettings
 
 @dataclasses.dataclass(kw_only=True)
 class ModelServer:
-    model_func: Callable[..., Any]
+    model_func: Callable[..., typing.Any]
     model_name: str
     model_description: str
     model_version: str

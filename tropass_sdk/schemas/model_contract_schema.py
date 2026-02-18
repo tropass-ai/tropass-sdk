@@ -28,7 +28,7 @@ class ModelPrimaryDataSchema(BaseModel):
 
 
 class ModelDescriptionSchema(BaseModel):
-    content: list[str] = pydantic.Field(default_factory=list)
+    content: str
     description_type: DescriptionTypeEnum
 
 
@@ -37,7 +37,7 @@ class ModelPanelOutputSchema(BaseModel):
     panel_type: str
     primary_data: ModelPrimaryDataSchema | None = None
 
-    description: ModelDescriptionSchema | None = None
+    descriptions: list[ModelDescriptionSchema] = pydantic.Field(default_factory=list)
     panel_show_order: int | None = None
 
 

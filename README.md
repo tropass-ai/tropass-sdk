@@ -35,7 +35,7 @@ poetry add tropass-sdk[server]
 Для инициализации сервера достаточно передать функцию предсказания в класс `ModelServer`.
 
 ### Ключевые требования:
-* Функция предсказания обязана принимать схему запроса модели `MLModelRequestSchema`.
+* Функция предсказания обязана принимать два аргумента `model_input` и `common_resources`.
 * Функция предсказания обязана возвращать схему ответа модели `MLModelResponseSchema`.
 * Инстанс `ModelServer` обязан находиться в файле `main.py` в корне проекта.
 
@@ -43,7 +43,7 @@ poetry add tropass-sdk[server]
 from tropass_sdk.server import ModelServer
 from tropass_sdk.schemas.model_contract_schema import MLModelRequestSchema, MLModelResponseSchema
 
-def predict_handler(data: MLModelRequestSchema) -> MLModelResponseSchema:
+def predict_handler(model_input: dict[str, list[typing.Any]], common_resources: dict[str, typing.Any]) -> MLModelResponseSchema:
     # Логика инференса модели
     return MLModelResponseSchema(panel_items=[])
 

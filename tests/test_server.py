@@ -4,15 +4,15 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from tropass_sdk.schemas.model_contract_schema import MLModelRequestSchema, MLModelResponseSchema
+from tropass_sdk.schemas import MLModelResponseSchema
 from tropass_sdk.server import ModelServer
 
 
-def sync_model(_data: MLModelRequestSchema) -> dict[str, Any]:
+def sync_model(_model_input: dict[str, list[Any]], _common_resources: dict[str, Any]) -> dict[str, Any]:
     return {"panel_items": []}
 
 
-async def async_model(_data: MLModelRequestSchema) -> MLModelResponseSchema:
+async def async_model(_model_input: dict[str, list[Any]], _common_resources: dict[str, Any]) -> MLModelResponseSchema:
     return MLModelResponseSchema(panel_items=[])
 
 
@@ -28,10 +28,12 @@ async def test_async_server() -> None:
     client = TestClient(app)
 
     request_data = {
-        "input_data": {
+        "model_input": {
             "test_field": ["test_value"],
         },
-        "files_directory_path": "/tmp/test",  # noqa: S108
+        "common_resources": {
+            "files_directory_path": "/tmp/test",  # noqa: S108
+        },
     }
 
     response = client.post("/prediction", json=request_data)
@@ -52,10 +54,12 @@ def test_sync_server() -> None:
     client = TestClient(app)
 
     request_data = {
-        "input_data": {
+        "model_input": {
             "test_field": ["test_value"],
         },
-        "files_directory_path": "/tmp/test",  # noqa: S108
+        "common_resources": {
+            "files_directory_path": "/tmp/test",  # noqa: S108
+        },
     }
 
     response = client.post("/prediction", json=request_data)

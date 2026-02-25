@@ -33,9 +33,9 @@ class ModelServer:
         @router.post("/prediction", response_model=MLModelResponseSchema)
         async def predict(data: MLModelRequestSchema) -> MLModelResponseSchema:
             if inspect.iscoroutinefunction(self.model_func):
-                result = await self.model_func(data)
+                result = await self.model_func(data.model_input, data.common_resources.model_dump())
             else:
-                result = self.model_func(data)
+                result = self.model_func(data.model_input, data.common_resources.model_dump())
             return typing.cast("MLModelResponseSchema", result)
 
         return router

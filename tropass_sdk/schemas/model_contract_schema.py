@@ -38,6 +38,7 @@ class ModelPanelOutputSchema(BaseModel):
     primary_data: ModelPrimaryDataSchema | None = None
 
     descriptions: list[ModelDescriptionSchema] = pydantic.Field(default_factory=list)
+    attachments: list[ModelMediaItemSchema] = pydantic.Field(default_factory=list)
     panel_show_order: int | None = None
 
 
@@ -45,6 +46,10 @@ class MLModelResponseSchema(BaseModel):
     panel_items: list[ModelPanelOutputSchema] = pydantic.Field(default_factory=list)
 
 
-class MLModelRequestSchema(BaseModel):
-    input_data: dict[str, list[typing.Any]]
+class CommonResourcesSchema(BaseModel):
     files_directory_path: str
+
+
+class MLModelRequestSchema(BaseModel):
+    model_input: dict[str, list[typing.Any]]
+    common_resources: CommonResourcesSchema

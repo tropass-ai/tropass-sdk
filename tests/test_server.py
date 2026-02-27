@@ -1,5 +1,6 @@
 import http
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -82,3 +83,29 @@ def test_invalid_body() -> None:
     response = client.post("/prediction", json=[1, 2, 3])
 
     assert response.status_code == http.HTTPStatus.UNPROCESSABLE_ENTITY
+
+
+def test_prediction_returns_traceback_in_debug_mode() -> None:
+    app = ModelServer(
+        model_func=Mock(side_effect=ValueError),
+        model_name="test-model",
+        model_description="test-description",
+        model_version="1.0.0",
+        debug=True,
+    ).build_application()
+
+    client = TestClient(app)
+
+    request_data = {
+        "model_input": {
+            "test_field": ["test_value"],
+        },
+        "common_resources": {
+            "files_directory_path": "/tmp/test",  # noqa: S108
+        },
+    }
+
+    response = client.post("/prediction", json=request_data)
+
+    assert response.status_code == http.HTTPStatus.INTERNAL_SERVER_ERROR
+    assert response.text == ""

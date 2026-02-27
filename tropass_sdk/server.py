@@ -4,10 +4,14 @@ import typing
 from collections.abc import Callable
 
 import fastapi
+import structlog
 from microbootstrap.bootstrappers.fastapi import FastApiBootstrapper
 
 from tropass_sdk.schemas.model_contract_schema import MLModelRequestSchema, MLModelResponseSchema
 from tropass_sdk.settings import ModelServerSettings
+
+
+logger = structlog.get_logger(__name__)
 
 
 @dataclasses.dataclass(kw_only=True)
@@ -32,11 +36,16 @@ class ModelServer:
 
         @router.post("/prediction", response_model=MLModelResponseSchema)
         async def predict(data: MLModelRequestSchema) -> MLModelResponseSchema:
-            if inspect.iscoroutinefunction(self.model_func):
-                result = await self.model_func(data.model_input, data.common_resources.model_dump())
-            else:
-                result = self.model_func(data.model_input, data.common_resources.model_dump())
-            return typing.cast("MLModelResponseSchema", result)
+            try:
+                if inspect.iscoroutinefunction(self.model_func):
+                    result = await self.model_func(data.model_input, data.common_resources.model_dump())
+                else:
+                    result = self.model_func(data.model_input, data.common_resources.model_dump())
+
+                return typing.cast("MLModelResponseSchema", result)
+            except Exception:
+                logger.exception("Unhandled exception during /prediction")
+                raise
 
         return router
 

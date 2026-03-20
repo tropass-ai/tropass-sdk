@@ -1,6 +1,5 @@
 from tropass_sdk.schemas.common import DescriptionTypeEnum
 from tropass_sdk.schemas.model_contract_schema import (
-    CommonResourcesSchema,
     MLModelRequestSchema,
     MLModelResponseSchema,
     ModelDescriptionSchema,
@@ -13,7 +12,6 @@ from tropass_sdk.schemas.model_contract_schema import (
 
 
 __all__ = [
-    "CommonResourcesSchema",
     "DescriptionTypeEnum",
     "MLModelRequestSchema",
     "MLModelResponseSchema",

@@ -6,8 +6,9 @@ from collections.abc import Callable
 import fastapi
 import structlog
 from microbootstrap.bootstrappers.fastapi import FastApiBootstrapper
+from starlette.concurrency import run_in_threadpool
 
-from tropass_sdk.schemas.model_contract_schema import MLModelRequestSchema, MLModelResponseSchema
+from tropass_sdk.schemas import model_contract_schema as schemas
 from tropass_sdk.settings import ModelServerSettings
 
 
@@ -16,7 +17,10 @@ logger = structlog.get_logger(__name__)
 
 @dataclasses.dataclass(kw_only=True)
 class ModelServer:
-    model_func: Callable[..., typing.Any]
+    model_func: Callable[
+        [schemas.MODEL_INPUT_TYPE, schemas.COMMON_RESOURCES_TYPE],
+        typing.Any,
+    ]
     model_name: str
     model_description: str
     model_version: str
@@ -30,19 +34,24 @@ class ModelServer:
             service_debug=self.debug,
             opentelemetry_container_name=self.model_name,
         )
+        self._model_func_is_async = inspect.iscoroutinefunction(self.model_func)
 
     def _setup_routes(self) -> fastapi.APIRouter:
         router: typing.Final = fastapi.APIRouter()
 
-        @router.post("/prediction", response_model=MLModelResponseSchema)
-        async def predict(data: MLModelRequestSchema) -> MLModelResponseSchema:
+        @router.post("/prediction", response_model=schemas.MLModelResponseSchema)
+        async def predict(data: schemas.MLModelRequestSchema) -> schemas.MLModelResponseSchema:
             try:
-                if inspect.iscoroutinefunction(self.model_func):
-                    result = await self.model_func(data.model_input, data.common_resources.model_dump())
+                if self._model_func_is_async:
+                    result = await self.model_func(data.model_input, data.common_resources)
                 else:
-                    result = self.model_func(data.model_input, data.common_resources.model_dump())
+                    result = await run_in_threadpool(
+                        self.model_func,
+                        data.model_input,
+                        data.common_resources,
+                    )
 
-                return typing.cast("MLModelResponseSchema", result)
+                return typing.cast("schemas.MLModelResponseSchema", result)
             except Exception:
                 logger.exception("Unhandled exception during /prediction")
                 raise

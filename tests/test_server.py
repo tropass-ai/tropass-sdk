@@ -1,19 +1,25 @@
 import http
-from typing import Any
 from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
 
 from tropass_sdk.schemas import MLModelResponseSchema
+from tropass_sdk.schemas import model_contract_schema as schemas
 from tropass_sdk.server import ModelServer
 
 
-def sync_model(_model_input: dict[str, list[Any]], _common_resources: dict[str, Any]) -> dict[str, Any]:
-    return {"panel_items": []}
+def sync_model(
+    _model_input: schemas.MODEL_INPUT_TYPE,
+    _common_resources: schemas.COMMON_RESOURCES_TYPE,
+) -> MLModelResponseSchema:
+    return MLModelResponseSchema(panel_items=[])
 
 
-async def async_model(_model_input: dict[str, list[Any]], _common_resources: dict[str, Any]) -> MLModelResponseSchema:
+async def async_model(
+    _model_input: schemas.MODEL_INPUT_TYPE,
+    _common_resources: schemas.COMMON_RESOURCES_TYPE,
+) -> MLModelResponseSchema:
     return MLModelResponseSchema(panel_items=[])
 
 

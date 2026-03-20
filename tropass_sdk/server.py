@@ -1,7 +1,6 @@
 import dataclasses
 import inspect
 import typing
-from collections.abc import Callable
 
 import fastapi
 import structlog
@@ -15,12 +14,20 @@ from tropass_sdk.settings import ModelServerSettings
 logger = structlog.get_logger(__name__)
 
 
+SyncModelFuncType = typing.Callable[
+    [schemas.MODEL_INPUT_TYPE, schemas.COMMON_RESOURCES_TYPE],
+    schemas.MLModelResponseSchema,
+]
+AsyncModelFuncType = typing.Callable[
+    [schemas.MODEL_INPUT_TYPE, schemas.COMMON_RESOURCES_TYPE],
+    typing.Awaitable[schemas.MLModelResponseSchema],
+]
+ModelFuncType = SyncModelFuncType | AsyncModelFuncType
+
+
 @dataclasses.dataclass(kw_only=True)
 class ModelServer:
-    model_func: Callable[
-        [schemas.MODEL_INPUT_TYPE, schemas.COMMON_RESOURCES_TYPE],
-        typing.Any,
-    ]
+    model_func: ModelFuncType
     model_name: str
     model_description: str
     model_version: str
@@ -43,15 +50,16 @@ class ModelServer:
         async def predict(data: schemas.MLModelRequestSchema) -> schemas.MLModelResponseSchema:
             try:
                 if self._model_func_is_async:
-                    result = await self.model_func(data.model_input, data.common_resources)
-                else:
-                    result = await run_in_threadpool(
-                        self.model_func,
-                        data.model_input,
-                        data.common_resources,
-                    )
+                    async_model_func = typing.cast("AsyncModelFuncType", self.model_func)
+                    return await async_model_func(data.model_input, data.common_resources)
 
-                return typing.cast("schemas.MLModelResponseSchema", result)
+                sync_model_func = typing.cast("SyncModelFuncType", self.model_func)
+                return await run_in_threadpool(
+                    sync_model_func,
+                    data.model_input,
+                    data.common_resources,
+                )
+
             except Exception:
                 logger.exception("Unhandled exception during /prediction")
                 raise

@@ -46,10 +46,10 @@ class MLModelResponseSchema(BaseModel):
     panel_items: list[ModelPanelOutputSchema] = pydantic.Field(default_factory=list)
 
 
-class CommonResourcesSchema(BaseModel):
-    files_directory_path: str
+MODEL_INPUT_TYPE: typing.TypeAlias = dict[str, list[typing.Any]]
+COMMON_RESOURCES_TYPE: typing.TypeAlias = dict[str, str | dict[str, typing.Any]]
 
 
 class MLModelRequestSchema(BaseModel):
-    model_input: dict[str, list[typing.Any]]
-    common_resources: CommonResourcesSchema
+    model_input: MODEL_INPUT_TYPE
+    common_resources: COMMON_RESOURCES_TYPE

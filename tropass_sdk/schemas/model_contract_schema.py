@@ -53,3 +53,8 @@ COMMON_RESOURCES_TYPE: typing.TypeAlias = dict[str, str | dict[str, typing.Any]]
 class MLModelRequestSchema(BaseModel):
     model_input: MODEL_INPUT_TYPE
     common_resources: COMMON_RESOURCES_TYPE
+
+
+class MLModelRequestMetadata(pydantic.BaseModel):
+    user_id: str | None = pydantic.Field(default=None, alias="X-User-ID")
+    locale: str = pydantic.Field(default="ru", alias="X-User-Locale")

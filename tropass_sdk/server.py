@@ -8,6 +8,7 @@ from microbootstrap.bootstrappers.fastapi import FastApiBootstrapper
 from starlette.concurrency import run_in_threadpool
 
 from tropass_sdk.schemas import model_contract_schema as schemas
+from tropass_sdk.schemas.common import USER_ID_HEADER, USER_LOCALE_HEADER
 from tropass_sdk.settings import ModelServerSettings
 
 
@@ -15,14 +16,40 @@ logger = structlog.get_logger(__name__)
 
 
 SyncModelFuncType = typing.Callable[
-    [schemas.MODEL_INPUT_TYPE, schemas.COMMON_RESOURCES_TYPE],
+    [
+        schemas.MODEL_INPUT_TYPE,
+        schemas.COMMON_RESOURCES_TYPE,
+        schemas.MLModelRequestMetadata | None,
+    ],
     schemas.MLModelResponseSchema,
 ]
 AsyncModelFuncType = typing.Callable[
-    [schemas.MODEL_INPUT_TYPE, schemas.COMMON_RESOURCES_TYPE],
+    [
+        schemas.MODEL_INPUT_TYPE,
+        schemas.COMMON_RESOURCES_TYPE,
+        schemas.MLModelRequestMetadata | None,
+    ],
     typing.Awaitable[schemas.MLModelResponseSchema],
 ]
 ModelFuncType = SyncModelFuncType | AsyncModelFuncType
+
+
+def _extract_request_metadata(
+    user_identifier: typing.Annotated[
+        str | None,
+        fastapi.Header(alias=USER_ID_HEADER),
+    ] = None,
+    user_locale: typing.Annotated[
+        str,
+        fastapi.Header(alias=USER_LOCALE_HEADER),
+    ] = "ru",
+) -> schemas.MLModelRequestMetadata:
+    return schemas.MLModelRequestMetadata.model_validate(
+        {
+            USER_ID_HEADER: user_identifier,
+            USER_LOCALE_HEADER: user_locale,
+        },
+    )
 
 
 @dataclasses.dataclass(kw_only=True)
@@ -47,17 +74,28 @@ class ModelServer:
         router: typing.Final = fastapi.APIRouter()
 
         @router.post("/prediction", response_model=schemas.MLModelResponseSchema)
-        async def predict(data: schemas.MLModelRequestSchema) -> schemas.MLModelResponseSchema:
+        async def predict(
+            data: schemas.MLModelRequestSchema,
+            request_metadata: typing.Annotated[
+                schemas.MLModelRequestMetadata,
+                fastapi.Depends(_extract_request_metadata),
+            ],
+        ) -> schemas.MLModelResponseSchema:
             try:
                 if self._model_func_is_async:
                     async_model_func = typing.cast("AsyncModelFuncType", self.model_func)
-                    return await async_model_func(data.model_input, data.common_resources)
+                    return await async_model_func(
+                        data.model_input,
+                        data.common_resources,
+                        request_metadata,
+                    )
 
                 sync_model_func = typing.cast("SyncModelFuncType", self.model_func)
                 return await run_in_threadpool(
                     sync_model_func,
                     data.model_input,
                     data.common_resources,
+                    request_metadata,
                 )
 
             except Exception:

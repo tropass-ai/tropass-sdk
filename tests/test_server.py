@@ -12,7 +12,7 @@ from tropass_sdk.server import ModelServer
 def sync_model(
     _model_input: schemas.MODEL_INPUT_TYPE,
     _common_resources: schemas.COMMON_RESOURCES_TYPE,
-    _request_metadata: schemas.MLModelRequestMetadata | None = None,
+    _request_metadata: schemas.MLModelRequestMetadataSchema | None = None,
 ) -> MLModelResponseSchema:
     return MLModelResponseSchema(panel_items=[])
 
@@ -20,7 +20,7 @@ def sync_model(
 async def async_model(
     _model_input: schemas.MODEL_INPUT_TYPE,
     _common_resources: schemas.COMMON_RESOURCES_TYPE,
-    _request_metadata: schemas.MLModelRequestMetadata | None = None,
+    _request_metadata: schemas.MLModelRequestMetadataSchema | None = None,
 ) -> MLModelResponseSchema:
     return MLModelResponseSchema(panel_items=[])
 
@@ -28,7 +28,7 @@ async def async_model(
 def sync_model_with_metadata(
     _model_input: schemas.MODEL_INPUT_TYPE,
     _common_resources: schemas.COMMON_RESOURCES_TYPE,
-    request_metadata: schemas.MLModelRequestMetadata | None = None,
+    request_metadata: schemas.MLModelRequestMetadataSchema | None = None,
 ) -> MLModelResponseSchema:
     panel_name = "missing"
     if request_metadata is not None and request_metadata.user_id is not None:

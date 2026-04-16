@@ -1,6 +1,6 @@
 from tropass_sdk.schemas.common import USER_ID_HEADER, USER_LOCALE_HEADER, DescriptionTypeEnum
 from tropass_sdk.schemas.model_contract_schema import (
-    MLModelRequestMetadata,
+    MLModelRequestMetadataSchema,
     MLModelRequestSchema,
     MLModelResponseSchema,
     ModelDescriptionSchema,
@@ -16,7 +16,7 @@ __all__ = [
     "USER_ID_HEADER",
     "USER_LOCALE_HEADER",
     "DescriptionTypeEnum",
-    "MLModelRequestMetadata",
+    "MLModelRequestMetadataSchema",
     "MLModelRequestSchema",
     "MLModelResponseSchema",
     "ModelDescriptionSchema",

@@ -19,7 +19,7 @@ SyncModelFuncType = typing.Callable[
     [
         schemas.MODEL_INPUT_TYPE,
         schemas.COMMON_RESOURCES_TYPE,
-        schemas.MLModelRequestMetadata | None,
+        schemas.MLModelRequestMetadataSchema | None,
     ],
     schemas.MLModelResponseSchema,
 ]
@@ -27,7 +27,7 @@ AsyncModelFuncType = typing.Callable[
     [
         schemas.MODEL_INPUT_TYPE,
         schemas.COMMON_RESOURCES_TYPE,
-        schemas.MLModelRequestMetadata | None,
+        schemas.MLModelRequestMetadataSchema | None,
     ],
     typing.Awaitable[schemas.MLModelResponseSchema],
 ]
@@ -43,8 +43,8 @@ def _extract_request_metadata(
         str,
         fastapi.Header(alias=USER_LOCALE_HEADER),
     ] = "ru",
-) -> schemas.MLModelRequestMetadata:
-    return schemas.MLModelRequestMetadata.model_validate(
+) -> schemas.MLModelRequestMetadataSchema:
+    return schemas.MLModelRequestMetadataSchema.model_validate(
         {
             USER_ID_HEADER: user_identifier,
             USER_LOCALE_HEADER: user_locale,
@@ -77,7 +77,7 @@ class ModelServer:
         async def predict(
             data: schemas.MLModelRequestSchema,
             request_metadata: typing.Annotated[
-                schemas.MLModelRequestMetadata,
+                schemas.MLModelRequestMetadataSchema,
                 fastapi.Depends(_extract_request_metadata),
             ],
         ) -> schemas.MLModelResponseSchema:

@@ -41,12 +41,12 @@ poetry add tropass-sdk[server]
 
 ```python
 from tropass_sdk.server import ModelServer
-from tropass_sdk.schemas.model_contract_schema import MLModelRequestMetadata, MLModelRequestSchema, MLModelResponseSchema
+from tropass_sdk.schemas.model_contract_schema import MLModelRequestMetadataSchema, MLModelRequestSchema, MLModelResponseSchema
 
 def predict_handler(
     model_input: dict[str, list[typing.Any]],
     common_resources: dict[str, typing.Any],
-    request_metadata: MLModelRequestMetadata | None = None,
+    request_metadata: MLModelRequestMetadataSchema | None = None,
 ) -> MLModelResponseSchema:
     # Логика инференса модели
     return MLModelResponseSchema(panel_items=[])

@@ -55,6 +55,6 @@ class MLModelRequestSchema(BaseModel):
     common_resources: COMMON_RESOURCES_TYPE
 
 
-class MLModelRequestMetadata(pydantic.BaseModel):
+class MLModelRequestMetadataSchema(BaseModel):
     user_id: str | None = pydantic.Field(default=None, alias="X-User-ID")
     locale: str = pydantic.Field(default="ru", alias="X-User-Locale")

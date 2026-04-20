@@ -7,6 +7,7 @@ import structlog
 from microbootstrap.bootstrappers.fastapi import FastApiBootstrapper
 from starlette.concurrency import run_in_threadpool
 
+from tropass_sdk.schemas import USER_API_TOKEN_HEADER
 from tropass_sdk.schemas import model_contract_schema as schemas
 from tropass_sdk.schemas.common import USER_ID_HEADER, USER_LOCALE_HEADER
 from tropass_sdk.settings import ModelServerSettings
@@ -43,12 +44,13 @@ def _extract_request_metadata(
         str,
         fastapi.Header(alias=USER_LOCALE_HEADER),
     ] = "ru",
+    user_api_token: typing.Annotated[
+        str | None,
+        fastapi.Header(alias=USER_API_TOKEN_HEADER),
+    ] = None,
 ) -> schemas.MLModelRequestMetadataSchema:
     return schemas.MLModelRequestMetadataSchema.model_validate(
-        {
-            USER_ID_HEADER: user_identifier,
-            USER_LOCALE_HEADER: user_locale,
-        },
+        {USER_ID_HEADER: user_identifier, USER_LOCALE_HEADER: user_locale, USER_API_TOKEN_HEADER: user_api_token},
     )
 
 

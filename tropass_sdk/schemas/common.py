@@ -9,3 +9,4 @@ class DescriptionTypeEnum(str, Enum):
 
 USER_ID_HEADER = "X-User-ID"
 USER_LOCALE_HEADER = "X-User-Locale"
+USER_API_TOKEN_HEADER = "X-User-Api-Token"  # noqa: S105

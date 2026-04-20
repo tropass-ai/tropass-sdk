@@ -1,4 +1,4 @@
-from tropass_sdk.schemas.common import USER_ID_HEADER, USER_LOCALE_HEADER, DescriptionTypeEnum
+from tropass_sdk.schemas.common import USER_API_TOKEN_HEADER, USER_ID_HEADER, USER_LOCALE_HEADER, DescriptionTypeEnum
 from tropass_sdk.schemas.model_contract_schema import (
     MLModelRequestMetadataSchema,
     MLModelRequestSchema,
@@ -13,6 +13,7 @@ from tropass_sdk.schemas.model_contract_schema import (
 
 
 __all__ = [
+    "USER_API_TOKEN_HEADER",
     "USER_ID_HEADER",
     "USER_LOCALE_HEADER",
     "DescriptionTypeEnum",

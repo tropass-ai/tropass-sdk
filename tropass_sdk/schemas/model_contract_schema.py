@@ -3,6 +3,7 @@ import typing
 import pydantic
 from pydantic import BaseModel
 
+from tropass_sdk import schemas as tropass_sdk_schemas
 from tropass_sdk.schemas.common import DescriptionTypeEnum
 
 
@@ -56,5 +57,6 @@ class MLModelRequestSchema(BaseModel):
 
 
 class MLModelRequestMetadataSchema(BaseModel):
-    user_id: str | None = pydantic.Field(default=None, alias="X-User-ID")
-    locale: str = pydantic.Field(default="ru", alias="X-User-Locale")
+    user_id: str | None = pydantic.Field(default=None, alias=tropass_sdk_schemas.USER_ID_HEADER)
+    locale: str = pydantic.Field(default="ru", alias=tropass_sdk_schemas.USER_LOCALE_HEADER)
+    user_api_token: str | None = pydantic.Field(default=None, alias=tropass_sdk_schemas.USER_API_TOKEN_HEADER)

@@ -4,7 +4,7 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
-from tropass_sdk.schemas import MLModelResponseSchema
+from tropass_sdk.schemas import USER_API_TOKEN_HEADER, USER_ID_HEADER, USER_LOCALE_HEADER, MLModelResponseSchema
 from tropass_sdk.schemas import model_contract_schema as schemas
 from tropass_sdk.server import ModelServer
 
@@ -208,8 +208,9 @@ def test_prediction_openapi_contains_metadata_headers() -> None:
         for parameter_item in parameters
         if parameter_item["in"] == "header"
     } == {
-        "X-User-ID": None,
-        "X-User-Locale": "ru",
+        USER_ID_HEADER: None,
+        USER_LOCALE_HEADER: "ru",
+        USER_API_TOKEN_HEADER: None,
     }
 
 

@@ -61,6 +61,32 @@ server = ModelServer(
 
 ```
 
+### Метаданные запроса
+
+`ModelServer` автоматически извлекает метаданные из HTTP-заголовков запроса к `/prediction` и передает их в аргумент
+`request_metadata`.
+
+Поддерживаемые заголовки:
+
+* `X-User-ID` — идентификатор пользователя. Доступен как `request_metadata.user_id`.
+* `X-User-Locale` — локаль пользователя. Доступна как `request_metadata.locale`, значение по умолчанию — `ru`.
+* `X-User-Api-Token` — API-токен пользователя. Доступен как `request_metadata.user_api_token`.
+
+Пример использования:
+
+```python
+def predict_handler(
+    model_input: dict[str, list[typing.Any]],
+    common_resources: dict[str, typing.Any],
+    request_metadata: MLModelRequestMetadataSchema | None = None,
+) -> MLModelResponseSchema:
+    user_id = request_metadata.user_id if request_metadata is not None else None
+    locale = request_metadata.locale if request_metadata is not None else "ru"
+
+    # Логика инференса модели с учетом пользователя и локали
+    return MLModelResponseSchema(panel_items=[])
+```
+
 ---
 
 ## ⚡ Варианты запуска

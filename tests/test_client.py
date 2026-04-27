@@ -2,11 +2,11 @@ import http
 import uuid
 
 import httpx
+import pybreaker
 import pytest
 
 from tropass_sdk.client import (
     GatewayCallError,
-    GatewayCircuitOpenError,
     GatewayClient,
     GatewayClientConfig,
     GatewayClientConfigValidationError,
@@ -172,7 +172,7 @@ async def test_call_model_opens_circuit_after_exhausted_failures(monkeypatch: py
     with pytest.raises(GatewayCallError) as exception_info:
         await client.call_model(MODEL_ID, {"feature": "value"})
 
-    assert isinstance(exception_info.value.__cause__, GatewayCircuitOpenError)
+    assert isinstance(exception_info.value.__cause__, pybreaker.CircuitBreakerError)
     assert request_counter == FOUR_REQUESTS
 
 

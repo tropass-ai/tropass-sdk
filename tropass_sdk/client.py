@@ -98,15 +98,12 @@ class GatewayClient:
                 self._circuit_breaker.call_async,
             )
             return await circuit_breaker_call(self._call_model_with_retries, model_id, model_request_data)
-        except pybreaker.CircuitBreakerError as exception:
-            raise GatewayCallError("Gateway model call failed") from GatewayCircuitOpenError(
-                "Gateway circuit breaker is open",
-            )
         except (
             GatewayResponseError,
             GatewayTransientResponseError,
             httpx.HTTPStatusError,
             httpx.TransportError,
+            pybreaker.CircuitBreakerError,
         ) as exception:
             raise GatewayCallError("Gateway model call failed") from exception
 

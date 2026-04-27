@@ -87,20 +87,70 @@ def predict_handler(
     return MLModelResponseSchema(panel_items=[])
 ```
 
----
-
 ## ⚡ Варианты запуска
 
 Для запуска создайте экземпляр приложения c помощью метода `build_application`. Важно! Имя приложения обязательно должно быть `application`:
 
 ```python
 application = server.build_application()
-
 ```
 
 Запуск: `uvicorn main:application --host 0.0.0.0 --port 8000 --workers 4`
 
----
+## 🌉 Клиент для вызова моделей через Gateway
+
+`GatewayClient` — асинхронный клиент для вызова моделей через Gateway. Клиент сам создает HTTP-соединение,
+добавляет приватный токен в заголовок `X-API-TOKEN`, выполняет retry через `stamina` и защищает вызов circuit breaker
+через `circuitbreaker`.
+
+```python
+import typing
+import uuid
+
+from tropass_sdk.client import GatewayClient
+
+
+async def call_gateway_model() -> dict[str, typing.Any]:
+    async with GatewayClient(
+        gateway_url="https://api.tropass.me",
+        gateway_api_token="private-token",
+    ) as gateway_client:
+        return await gateway_client.call_model(
+            model_id=uuid.UUID("00000000-0000-0000-0000-000000000123"),
+            model_request_data={
+                "input_name": ["input-value"]
+            },
+        )
+```
+
+`call_model` отправляет запрос на `api/rpc/call-model` в формате:
+
+```python
+{
+    "model_id": "00000000-0000-0000-0000-000000000123",
+    "model_request_data": {
+        "input_name": ["input-value"]
+    },
+}
+```
+
+Для настройки клиента можно передать `GatewayClientConfig` в аргумент `client_config`.
+
+Параметры конфигурации:
+
+* `timeout_seconds` — HTTP timeout одного запроса к Gateway.
+* `retry_attempts` — максимальное количество попыток выполнить запрос.
+* `retry_timeout_seconds` — общий лимит времени на retry-цикл.
+* `retry_wait_exp_base` — база экспоненциального роста паузы между retry.
+* `circuit_failure_threshold` — количество неуспешных вызовов до открытия circuit breaker.
+* `circuit_recovery_seconds` — время до попытки восстановить circuit breaker.
+* `circuit_success_threshold` — зарезервирован для совместимости конфигурации.
+
+Метод возвращает `dict` с ответом Gateway или выбрасывает `GatewayCallError`.
+
+Оригинальная причина ошибки доступна через `__cause__`: например открытый circuit breaker, некорректный JSON,
+HTTP-ошибка или ошибка транспорта после всех retry.
+
 
 ## 🔍 Мониторинг и наблюдаемость
 

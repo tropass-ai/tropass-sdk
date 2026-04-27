@@ -101,7 +101,7 @@ application = server.build_application()
 
 `GatewayClient` — асинхронный клиент для вызова моделей через Gateway. Клиент сам создает HTTP-соединение,
 добавляет приватный токен в заголовок `X-API-TOKEN`, выполняет retry через `stamina` и защищает вызов circuit breaker
-через `pybreaker`.
+через `circuitbreaker`.
 
 ```python
 import typing
@@ -144,7 +144,7 @@ async def call_gateway_model() -> dict[str, typing.Any]:
 * `retry_wait_exp_base` — база экспоненциального роста паузы между retry.
 * `circuit_failure_threshold` — количество неуспешных вызовов до открытия circuit breaker.
 * `circuit_recovery_seconds` — время до попытки восстановить circuit breaker.
-* `circuit_success_threshold` — количество успешных вызовов для закрытия circuit breaker после восстановления.
+* `circuit_success_threshold` — зарезервирован для совместимости конфигурации.
 
 Метод возвращает `dict` с ответом Gateway или выбрасывает `GatewayCallError`.
 

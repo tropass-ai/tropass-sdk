@@ -33,7 +33,7 @@ classifiers = [
 
 [project.optional-dependencies]
 schemas = ["pydantic"]
-server = ["microbootstrap[fastapi]", "uvicorn", "httpx", "pybreaker", "stamina"]
+server = ["microbootstrap[fastapi]", "uvicorn", "httpx", "circuitbreaker", "stamina"]
 
 [dependency-groups]
 dev = [

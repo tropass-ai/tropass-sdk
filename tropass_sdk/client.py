@@ -4,14 +4,15 @@ import types
 import typing
 import uuid
 
+import circuitbreaker  # type: ignore[import-untyped]
 import httpx
-import pybreaker
 import stamina
 
 from tropass_sdk.settings import gateway_client_settings
 
 
 JsonDict: typing.TypeAlias = dict[str, typing.Any]
+AsyncCircuitCall: typing.TypeAlias = typing.Callable[[uuid.UUID, JsonDict], typing.Awaitable[JsonDict]]
 
 
 class GatewayClientError(RuntimeError):
@@ -55,16 +56,23 @@ class GatewayClient:
     gateway_api_token: str
     client_config: GatewayClientConfig = dataclasses.field(default_factory=GatewayClientConfig)
     http_client: httpx.AsyncClient = dataclasses.field(init=False)
-    _circuit_breaker: pybreaker.CircuitBreaker = dataclasses.field(init=False)
+    _call_model_with_circuit_breaker: AsyncCircuitCall = dataclasses.field(init=False)
 
     def __post_init__(self) -> None:
         self._validate_client_config()
         self.gateway_url = self.gateway_url.rstrip("/")
-        self._circuit_breaker = pybreaker.CircuitBreaker(
-            fail_max=self.client_config.circuit_failure_threshold,
-            reset_timeout=self.client_config.circuit_recovery_seconds,
-            success_threshold=self.client_config.circuit_success_threshold,
+        circuit_breaker = circuitbreaker.CircuitBreaker(
+            failure_threshold=self.client_config.circuit_failure_threshold,
+            recovery_timeout=self.client_config.circuit_recovery_seconds,
+            expected_exception=(
+                GatewayResponseError,
+                GatewayTransientResponseError,
+                httpx.HTTPStatusError,
+                httpx.TransportError,
+            ),
         )
+        circuit_breaker._recovery_timeout = self.client_config.circuit_recovery_seconds  # noqa: SLF001
+        self._call_model_with_circuit_breaker = circuit_breaker(self._call_model_with_retries)
         self.http_client = httpx.AsyncClient(timeout=self.client_config.timeout_seconds)
 
     def _validate_client_config(self) -> None:
@@ -93,17 +101,13 @@ class GatewayClient:
 
     async def call_model(self, model_id: uuid.UUID, model_request_data: JsonDict) -> JsonDict:
         try:
-            circuit_breaker_call = typing.cast(
-                "typing.Callable[..., typing.Awaitable[JsonDict]]",
-                self._circuit_breaker.call_async,
-            )
-            return await circuit_breaker_call(self._call_model_with_retries, model_id, model_request_data)
+            return await self._call_model_with_circuit_breaker(model_id, model_request_data)
         except (
             GatewayResponseError,
             GatewayTransientResponseError,
             httpx.HTTPStatusError,
             httpx.TransportError,
-            pybreaker.CircuitBreakerError,
+            circuitbreaker.CircuitBreakerError,
         ) as exception:
             raise GatewayCallError("Gateway model call failed") from exception
 

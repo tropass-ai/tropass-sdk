@@ -32,13 +32,8 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-schemas = [
-    "pydantic",
-]
-server = [
-    "microbootstrap[fastapi]",
-    "uvicorn",
-]
+schemas = ["pydantic"]
+server = ["microbootstrap[fastapi]", "uvicorn", "httpx", "pybreaker", "stamina"]
 
 [dependency-groups]
 dev = [
@@ -47,7 +42,6 @@ dev = [
     "pytest-cov>=7.0.0",
     "pytest-xdist>=3.8.0",
     "ruff>=0.14.13",
-    "httpx>=0.26.0",
 ]
 
 [tool.mypy]

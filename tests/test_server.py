@@ -26,13 +26,17 @@ async def async_model(
 
 
 def sync_model_with_metadata(
-    _model_input: schemas.MODEL_INPUT_TYPE,
+    model_input: schemas.MODEL_INPUT_TYPE,
     _common_resources: schemas.COMMON_RESOURCES_TYPE,
     request_metadata: schemas.MLModelRequestMetadataSchema | None = None,
 ) -> MLModelResponseSchema:
     panel_name = "missing"
-    if request_metadata is not None and request_metadata.user_id is not None:
-        panel_name = request_metadata.user_id
+    model_request_metadata = model_input.get("request_metadata")
+    if isinstance(model_request_metadata, dict) and model_request_metadata.get("user_id") is not None:
+        panel_name = str(model_request_metadata["user_id"])
+
+    if request_metadata is not None:
+        panel_name = "unexpected"
 
     return MLModelResponseSchema(
         panel_items=[
@@ -97,7 +101,7 @@ def test_sync_server() -> None:
     assert response.json() == {"panel_items": []}
 
 
-def test_sync_server_passes_metadata_from_headers() -> None:
+def test_sync_server_passes_metadata_inside_model_input_from_headers() -> None:
     app = ModelServer(
         model_func=sync_model_with_metadata,
         model_name="test-model",
@@ -137,7 +141,7 @@ def test_sync_server_passes_metadata_from_headers() -> None:
     }
 
 
-def test_sync_server_passes_empty_metadata_when_headers_are_missing() -> None:
+def test_sync_server_passes_empty_metadata_inside_model_input_when_headers_are_missing() -> None:
     app = ModelServer(
         model_func=sync_model_with_metadata,
         model_name="test-model",
@@ -170,6 +174,58 @@ def test_sync_server_passes_empty_metadata_when_headers_are_missing() -> None:
                 "panel_show_order": None,
             },
         ],
+    }
+
+
+def test_sync_server_passes_full_metadata_inside_model_input() -> None:
+    captured_model_input: schemas.MODEL_INPUT_TYPE | None = None
+
+    def sync_model_capture_metadata(
+        model_input: schemas.MODEL_INPUT_TYPE,
+        _common_resources: schemas.COMMON_RESOURCES_TYPE,
+        request_metadata: schemas.MLModelRequestMetadataSchema | None = None,
+    ) -> MLModelResponseSchema:
+        nonlocal captured_model_input
+        captured_model_input = model_input
+        assert request_metadata is None
+        return MLModelResponseSchema(panel_items=[])
+
+    app = ModelServer(
+        model_func=sync_model_capture_metadata,
+        model_name="test-model",
+        model_description="test-description",
+        model_version="1.0.0",
+    ).build_application()
+
+    client = TestClient(app)
+
+    request_data = {
+        "model_input": {
+            "test_field": ["test_value"],
+        },
+        "common_resources": {
+            "files_directory_path": "/tmp/test",  # noqa: S108
+        },
+    }
+
+    response = client.post(
+        "/prediction",
+        json=request_data,
+        headers={
+            USER_ID_HEADER: "user-123",
+            USER_LOCALE_HEADER: "en",
+            USER_API_TOKEN_HEADER: "token-123",
+        },
+    )
+
+    assert response.status_code == http.HTTPStatus.OK
+    assert captured_model_input == {
+        "test_field": ["test_value"],
+        "request_metadata": {
+            "user_id": "user-123",
+            "locale": "en",
+            "user_api_token": "token-123",
+        },
     }
 
 

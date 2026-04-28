@@ -35,6 +35,9 @@ AsyncModelFuncType = typing.Callable[
 ModelFuncType = SyncModelFuncType | AsyncModelFuncType
 
 
+REQUEST_METADATA_INPUT_KEY = "request_metadata"
+
+
 def _extract_request_metadata(
     user_identifier: typing.Annotated[
         str | None,
@@ -52,6 +55,16 @@ def _extract_request_metadata(
     return schemas.MLModelRequestMetadataSchema.model_validate(
         {USER_ID_HEADER: user_identifier, USER_LOCALE_HEADER: user_locale, USER_API_TOKEN_HEADER: user_api_token},
     )
+
+
+def _build_model_input_with_request_metadata(
+    model_input: schemas.MODEL_INPUT_TYPE,
+    request_metadata: schemas.MLModelRequestMetadataSchema,
+) -> schemas.MODEL_INPUT_TYPE:
+    return {
+        **model_input,
+        REQUEST_METADATA_INPUT_KEY: request_metadata.model_dump(),
+    }
 
 
 @dataclasses.dataclass(kw_only=True)
@@ -84,20 +97,21 @@ class ModelServer:
             ],
         ) -> schemas.MLModelResponseSchema:
             try:
+                model_input = _build_model_input_with_request_metadata(data.model_input, request_metadata)
                 if self._model_func_is_async:
                     async_model_func = typing.cast("AsyncModelFuncType", self.model_func)
                     return await async_model_func(
-                        data.model_input,
+                        model_input,
                         data.common_resources,
-                        request_metadata,
+                        None,
                     )
 
                 sync_model_func = typing.cast("SyncModelFuncType", self.model_func)
                 return await run_in_threadpool(
                     sync_model_func,
-                    data.model_input,
+                    model_input,
                     data.common_resources,
-                    request_metadata,
+                    None,
                 )
 
             except Exception:

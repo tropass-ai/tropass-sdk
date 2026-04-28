@@ -47,7 +47,7 @@ class MLModelResponseSchema(BaseModel):
     panel_items: list[ModelPanelOutputSchema] = pydantic.Field(default_factory=list)
 
 
-MODEL_INPUT_TYPE: typing.TypeAlias = dict[str, list[typing.Any]]
+MODEL_INPUT_TYPE: typing.TypeAlias = dict[str, list[typing.Any] | dict[str, typing.Any]]
 COMMON_RESOURCES_TYPE: typing.TypeAlias = dict[str, str | dict[str, typing.Any]]
 
 

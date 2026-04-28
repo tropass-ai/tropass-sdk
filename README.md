@@ -36,17 +36,18 @@ poetry add tropass-sdk[server]
 
 ### Ключевые требования:
 * Функция предсказания обязана принимать три аргумента `model_input`, `common_resources` и `request_metadata`.
+* Метаданные запроса передаются внутри `model_input["request_metadata"]`; аргумент `request_metadata` сохранен для совместимости.
 * Функция предсказания обязана возвращать схему ответа модели `MLModelResponseSchema`.
 * Инстанс `ModelServer` обязан находиться в файле `main.py` в корне проекта.
 
 ```python
 from tropass_sdk.server import ModelServer
-from tropass_sdk.schemas.model_contract_schema import MLModelRequestMetadataSchema, MLModelRequestSchema, MLModelResponseSchema
+from tropass_sdk.schemas.model_contract_schema import MLModelRequestMetadataSchema, MLModelResponseSchema
 
 def predict_handler(
-    model_input: dict[str, list[typing.Any]],
+    model_input: dict[str, typing.Any],
     common_resources: dict[str, typing.Any],
-    request_metadata: MLModelRequestMetadataSchema | None = None,
+    _request_metadata: MLModelRequestMetadataSchema | None = None,
 ) -> MLModelResponseSchema:
     # Логика инференса модели
     return MLModelResponseSchema(panel_items=[])
@@ -63,28 +64,42 @@ server = ModelServer(
 
 ### Метаданные запроса
 
-`ModelServer` автоматически извлекает метаданные из HTTP-заголовков запроса к `/prediction` и передает их в аргумент
-`request_metadata`.
+`ModelServer` автоматически извлекает метаданные из HTTP-заголовков запроса к `/prediction` и добавляет их в
+`model_input` по ключу `request_metadata`.
 
 Поддерживаемые заголовки:
 
-* `X-User-ID` — идентификатор пользователя. Доступен как `request_metadata.user_id`.
-* `X-User-Locale` — локаль пользователя. Доступна как `request_metadata.locale`, значение по умолчанию — `ru`.
-* `X-User-Api-Token` — API-токен пользователя. Доступен как `request_metadata.user_api_token`.
+* `X-User-ID` — идентификатор пользователя. Доступен как `model_input["request_metadata"]["user_id"]`.
+* `X-User-Locale` — локаль пользователя. Доступна как `model_input["request_metadata"]["locale"]`, значение по умолчанию — `ru`.
+* `X-User-Api-Token` — API-токен пользователя. Доступен как `model_input["request_metadata"]["user_api_token"]`.
 
 Пример использования:
 
 ```python
 def predict_handler(
-    model_input: dict[str, list[typing.Any]],
+    model_input: dict[str, typing.Any],
     common_resources: dict[str, typing.Any],
-    request_metadata: MLModelRequestMetadataSchema | None = None,
+    _request_metadata: MLModelRequestMetadataSchema | None = None,
 ) -> MLModelResponseSchema:
-    user_id = request_metadata.user_id if request_metadata is not None else None
-    locale = request_metadata.locale if request_metadata is not None else "ru"
+    request_metadata = model_input["request_metadata"]
+    user_id = request_metadata["user_id"]
+    locale = request_metadata["locale"]
 
     # Логика инференса модели с учетом пользователя и локали
     return MLModelResponseSchema(panel_items=[])
+```
+
+После обработки заголовков `model_input` получает такой вид:
+
+```python
+{
+    "input_name": ["input_value"],
+    "request_metadata": {
+        "user_id": "user_id",
+        "locale": "ru",
+        "user_api_token": "token",
+    },
+}
 ```
 
 ## ⚡ Варианты запуска

@@ -47,7 +47,6 @@ from tropass_sdk.schemas.model_contract_schema import MLModelRequestMetadataSche
 def predict_handler(
     model_input: dict[str, typing.Any],
     common_resources: dict[str, typing.Any],
-    _request_metadata: MLModelRequestMetadataSchema | None = None,
 ) -> MLModelResponseSchema:
     # Логика инференса модели
     return MLModelResponseSchema(panel_items=[])
@@ -79,7 +78,6 @@ server = ModelServer(
 def predict_handler(
     model_input: dict[str, typing.Any],
     common_resources: dict[str, typing.Any],
-    _request_metadata: MLModelRequestMetadataSchema | None = None,
 ) -> MLModelResponseSchema:
     request_metadata = model_input["request_metadata"]
     user_id = request_metadata["user_id"]

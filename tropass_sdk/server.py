@@ -20,7 +20,6 @@ SyncModelFuncType = typing.Callable[
     [
         schemas.MODEL_INPUT_TYPE,
         schemas.COMMON_RESOURCES_TYPE,
-        schemas.MLModelRequestMetadataSchema | None,
     ],
     schemas.MLModelResponseSchema,
 ]
@@ -28,7 +27,6 @@ AsyncModelFuncType = typing.Callable[
     [
         schemas.MODEL_INPUT_TYPE,
         schemas.COMMON_RESOURCES_TYPE,
-        schemas.MLModelRequestMetadataSchema | None,
     ],
     typing.Awaitable[schemas.MLModelResponseSchema],
 ]
@@ -103,7 +101,6 @@ class ModelServer:
                     return await async_model_func(
                         model_input,
                         data.common_resources,
-                        None,
                     )
 
                 sync_model_func = typing.cast("SyncModelFuncType", self.model_func)
@@ -111,7 +108,6 @@ class ModelServer:
                     sync_model_func,
                     model_input,
                     data.common_resources,
-                    None,
                 )
 
             except Exception:

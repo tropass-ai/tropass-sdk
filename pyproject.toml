@@ -33,7 +33,10 @@ classifiers = [
 
 [project.optional-dependencies]
 schemas = ["pydantic"]
-server = ["microbootstrap[fastapi]", "uvicorn", "httpx", "circuitbreaker", "stamina"]
+# TODO: drop the `fastapi<0.137` pin once prometheus-fastapi-instrumentator supports FastAPI 0.137+
+# (FastAPI 0.137 wraps included routers in `_IncludedRouter`, which has no `.path`, breaking the
+# instrumentator's route-name resolution).
+server = ["microbootstrap[fastapi]", "fastapi<0.137", "uvicorn", "httpx", "circuitbreaker", "stamina"]
 
 [dependency-groups]
 dev = [

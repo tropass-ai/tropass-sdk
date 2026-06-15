@@ -12,7 +12,10 @@ class ModelServerSettings(FastApiSettings):
     environment_name: str = "local"
 
     prometheus_metrics_path: str = "/metrics"
+
     opentelemetry_container_name: str = "model-server"
+    opentelemetry_endpoint: str | None = None
+
     server_host: str = "0.0.0.0"  # noqa: S104
     server_port: int = 8000
 

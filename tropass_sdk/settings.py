@@ -21,7 +21,7 @@ class ModelServerSettings(FastApiSettings):
 
 
 class GatewayClientSettings(BaseSettings):
-    api_token_header: str = "X-API-TOKEN"  # noqa: S105
+    api_token_header: str = "Authorization"  # noqa: S105
     call_model_path: str = "api/rpc/call-model"
 
 

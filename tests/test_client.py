@@ -73,7 +73,7 @@ async def test_call_model_returns_gateway_response(monkeypatch: pytest.MonkeyPat
     assert response_payload == {"result": {"score": 10}}
     assert captured_request is not None
     assert str(captured_request.url) == "https://gateway.example.com/api/rpc/call-model"
-    assert captured_request.headers["X-API-TOKEN"] == GATEWAY_API_TOKEN
+    assert captured_request.headers["Authorization"] == f"Bearer {GATEWAY_API_TOKEN}"
     assert captured_request.read() == (
         b'{"model_id":"00000000-0000-0000-0000-000000000123","model_request_data":{"feature":"value"}}'
     )

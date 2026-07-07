@@ -124,7 +124,7 @@ class GatewayClient:
     async def _send_call_model_request(self, model_id: uuid.UUID, model_request_data: JsonDict) -> JsonDict:
         response = await self.http_client.post(
             self._build_call_model_url(),
-            headers={gateway_client_settings.api_token_header: self.gateway_api_token},
+            headers={gateway_client_settings.api_token_header: f"Bearer {self.gateway_api_token}"},
             json={
                 "model_id": str(model_id),
                 "model_request_data": model_request_data,

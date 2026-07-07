@@ -113,7 +113,7 @@ application = server.build_application()
 ## 🌉 Клиент для вызова моделей через Gateway
 
 `GatewayClient` — асинхронный клиент для вызова моделей через Gateway. Клиент сам создает HTTP-соединение,
-добавляет приватный токен в заголовок `X-API-TOKEN`, выполняет retry через `stamina` и защищает вызов circuit breaker
+добавляет приватный токен в заголовок `Authorization: Bearer ...`, выполняет retry через `stamina` и защищает вызов circuit breaker
 через `circuitbreaker`.
 
 ```python

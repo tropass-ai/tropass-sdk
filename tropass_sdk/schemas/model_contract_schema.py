@@ -60,3 +60,4 @@ class MLModelRequestMetadataSchema(BaseModel):
     user_id: str | None = pydantic.Field(default=None, alias=tropass_sdk_schemas.USER_ID_HEADER)  # type: ignore[literal-required]
     locale: str = pydantic.Field(default="ru", alias=tropass_sdk_schemas.USER_LOCALE_HEADER)  # type: ignore[literal-required]
     user_api_token: str | None = pydantic.Field(default=None, alias=tropass_sdk_schemas.USER_API_TOKEN_HEADER)  # type: ignore[literal-required]
+    trail_id: str | None = pydantic.Field(default=None, alias=tropass_sdk_schemas.TRAIL_ID_HEADER)  # type: ignore[literal-required]

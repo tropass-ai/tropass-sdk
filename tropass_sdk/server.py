@@ -9,7 +9,7 @@ from starlette.concurrency import run_in_threadpool
 
 from tropass_sdk.schemas import USER_API_TOKEN_HEADER
 from tropass_sdk.schemas import model_contract_schema as schemas
-from tropass_sdk.schemas.common import USER_ID_HEADER, USER_LOCALE_HEADER
+from tropass_sdk.schemas.common import TRAIL_ID_HEADER, USER_ID_HEADER, USER_LOCALE_HEADER
 from tropass_sdk.settings import ModelServerSettings
 
 
@@ -49,9 +49,18 @@ def _extract_request_metadata(
         str | None,
         fastapi.Header(alias=USER_API_TOKEN_HEADER),
     ] = None,
+    trail_id: typing.Annotated[
+        str | None,
+        fastapi.Header(alias=TRAIL_ID_HEADER),
+    ] = None,
 ) -> schemas.MLModelRequestMetadataSchema:
     return schemas.MLModelRequestMetadataSchema.model_validate(
-        {USER_ID_HEADER: user_identifier, USER_LOCALE_HEADER: user_locale, USER_API_TOKEN_HEADER: user_api_token},
+        {
+            USER_ID_HEADER: user_identifier,
+            USER_LOCALE_HEADER: user_locale,
+            USER_API_TOKEN_HEADER: user_api_token,
+            TRAIL_ID_HEADER: trail_id,
+        },
     )
 
 

@@ -4,7 +4,13 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
-from tropass_sdk.schemas import USER_API_TOKEN_HEADER, USER_ID_HEADER, USER_LOCALE_HEADER, MLModelResponseSchema
+from tropass_sdk.schemas import (
+    TRAIL_ID_HEADER,
+    USER_API_TOKEN_HEADER,
+    USER_ID_HEADER,
+    USER_LOCALE_HEADER,
+    MLModelResponseSchema,
+)
 from tropass_sdk.schemas import model_contract_schema as schemas
 from tropass_sdk.server import ModelServer
 
@@ -215,6 +221,7 @@ def test_sync_server_passes_full_metadata_inside_model_input() -> None:
             USER_ID_HEADER: "user-123",
             USER_LOCALE_HEADER: "en",
             USER_API_TOKEN_HEADER: "token-123",
+            TRAIL_ID_HEADER: "trail-123",
         },
     )
 
@@ -225,6 +232,7 @@ def test_sync_server_passes_full_metadata_inside_model_input() -> None:
             "user_id": "user-123",
             "locale": "en",
             "user_api_token": "token-123",
+            "trail_id": "trail-123",
         },
     }
 
@@ -267,6 +275,7 @@ def test_prediction_openapi_contains_metadata_headers() -> None:
         USER_ID_HEADER: None,
         USER_LOCALE_HEADER: "ru",
         USER_API_TOKEN_HEADER: None,
+        TRAIL_ID_HEADER: None,
     }
 
 

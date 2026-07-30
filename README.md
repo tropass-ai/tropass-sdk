@@ -44,6 +44,7 @@ poetry add tropass-sdk[server]
 from tropass_sdk.server import ModelServer
 from tropass_sdk.schemas.model_contract_schema import MLModelRequestMetadataSchema, MLModelResponseSchema
 
+
 def predict_handler(
     model_input: dict[str, typing.Any],
     common_resources: dict[str, typing.Any],
@@ -51,14 +52,14 @@ def predict_handler(
     # Логика инференса модели
     return MLModelResponseSchema(panel_items=[])
 
+
 server = ModelServer(
     model_func=predict_handler,
     model_name="my_model",
     model_description="Production model description",
     model_version="1.0.0",
-    debug=False
+    debug=False,
 )
-
 ```
 
 ### Метаданные запроса
@@ -113,8 +114,14 @@ application = server.build_application()
 ## 🌉 Клиент для вызова моделей через Gateway
 
 `GatewayClient` — асинхронный клиент для вызова моделей через Gateway. Клиент сам создает HTTP-соединение,
-добавляет приватный токен в заголовок `Authorization: Bearer ...`, выполняет retry через `stamina` и защищает вызов circuit breaker
-через `circuitbreaker`.
+добавляет приватный токен в заголовок `Authorization: Bearer ...`, отправляет задачу через v2-протокол
+Gateway (submit + polling), выполняет retry submit через `stamina` и защищает submit circuit breaker
+через `circuitbreaker`. Polling скрыт внутри клиента.
+
+### Автоматический режим
+
+`call_model` отправляет запрос, получает `task_id`, опрашивает результат и возвращает финальный payload.
+Сигнатура сохранена для совместимости — бизнес-код переписывать не нужно.
 
 ```python
 import typing
@@ -130,39 +137,81 @@ async def call_gateway_model() -> dict[str, typing.Any]:
     ) as gateway_client:
         return await gateway_client.call_model(
             model_id=uuid.UUID("00000000-0000-0000-0000-000000000123"),
-            model_request_data={
-                "input_name": ["input-value"]
-            },
+            model_request_data={"input_name": ["input-value"]},
         )
 ```
 
-`call_model` отправляет запрос на `api/rpc/call-model` в формате:
+Внутри `call_model`:
+
+1. генерирует `Idempotency-Key` (uuid4) и отправляет `POST api/rpc/call-model` с заголовком
+   `Tropass-Model-Call-Version: 2`;
+2. получает `{task_id, status: "distributed"}`;
+3. опрашивает `GET api/rest/model-tasks/{task_id}` до терминального статуса;
+4. возвращает поле `result` финального ответа.
+
+Retry submit переиспользует тот же `Idempotency-Key`, поэтому дубликаты задач не создаются.
+
+### Ручной lifecycle
+
+Для низкоуровневого управления задачей доступны три метода:
 
 ```python
-{
-    "model_id": "00000000-0000-0000-0000-000000000123",
-    "model_request_data": {
-        "input_name": ["input-value"]
-    },
-}
+from tropass_sdk.client import GatewayClient
+
+
+async def manual_lifecycle() -> None:
+    async with GatewayClient(
+        gateway_url="https://api.tropass.me",
+        gateway_api_token="private-token",
+    ) as gateway_client:
+        submission = await gateway_client.submit_model_task(
+            model_id=model_id,
+            model_request_data={"input_name": ["input-value"]},
+        )
+        task_id = uuid.UUID(submission.task_id)
+
+        task = await gateway_client.fetch_model_task(task_id)
+
+        result = await gateway_client.wait_for_model_task(task_id)
 ```
 
-Для настройки клиента можно передать `GatewayClientConfig` в аргумент `client_config`.
+* `submit_model_task` — отправляет задачу, возвращает `{task_id, status}`. Параметр `idempotency_key`
+  опционален: без него ключ генерируется автоматически.
+* `fetch_model_task` — однократный poll, возвращает текущий статус задачи.
+* `wait_for_model_task` — poll-loop до терминального статуса, возвращает `result`.
+
+### Конфигурация
+
+Для настройки клиента передайте `GatewayClientConfig` в аргумент `client_config`.
 
 Параметры конфигурации:
 
-* `timeout_seconds` — HTTP timeout одного запроса к Gateway.
-* `retry_attempts` — максимальное количество попыток выполнить запрос.
-* `retry_timeout_seconds` — общий лимит времени на retry-цикл.
+* `http_timeout_seconds` — HTTP timeout одного запроса (submit/poll).
+* `result_deadline_seconds` — общий deadline ожидания результата модели в `call_model`/`wait_for_model_task`.
+* `poll_interval_seconds` — интервал между poll-запросами (fallback, т.к. Gateway не возвращает `Retry-After`).
+* `retry_attempts` — количество попыток submit/poll при транзиентных ошибках.
+* `retry_timeout_seconds` — общий лимит времени на retry-цикл одного запроса.
 * `retry_wait_exp_base` — база экспоненциального роста паузы между retry.
-* `circuit_failure_threshold` — количество неуспешных вызовов до открытия circuit breaker.
+* `circuit_failure_threshold` — количество неуспешных submit до открытия circuit breaker.
 * `circuit_recovery_seconds` — время до попытки восстановить circuit breaker.
 * `circuit_success_threshold` — зарезервирован для совместимости конфигурации.
 
-Метод возвращает `dict` с ответом Gateway или выбрасывает `GatewayCallError`.
+Circuit breaker оборачивает только submit. Pending-статусы poll (`distributed`, `processing_started`)
+не считаются ошибками и не открывают breaker.
 
-Оригинальная причина ошибки доступна через `__cause__`: например открытый circuit breaker, некорректный JSON,
-HTTP-ошибка или ошибка транспорта после всех retry.
+### Исключения
+
+Все ошибки наследуются от `GatewayClientError`:
+
+* `GatewayCallError` — общий сбой вызова (транспорт, 5xx, auth, `processing_error`).
+* `GatewayCircuitOpenError` — submit circuit breaker открыт.
+* `GatewayTaskTimeoutError` — задача не завершена в пределах `result_deadline_seconds`.
+* `GatewayTaskNotFoundError` — задача не найдена или принадлежит другому пользователю (404 на poll).
+* `GatewayIdempotencyConflictError` — `Idempotency-Key` переиспользован с другим payload (409 на submit).
+* `GatewayResponseError` — некорректный JSON или схема ответа Gateway.
+* `GatewayClientConfigValidationError` — невалидная конфигурация клиента.
+
+Оригинальная причина ошибки доступна через `__cause__`.
 
 
 ## 🔍 Мониторинг и наблюдаемость

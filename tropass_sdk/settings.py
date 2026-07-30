@@ -23,6 +23,10 @@ class ModelServerSettings(FastApiSettings):
 class GatewayClientSettings(BaseSettings):
     api_token_header: str = "Authorization"  # noqa: S105
     call_model_path: str = "api/rpc/call-model"
+    model_task_path: str = "api/rest/model-tasks"
+    model_call_version_header: str = "Tropass-Model-Call-Version"
+    model_call_version_value: str = "2"
+    idempotency_key_header: str = "Idempotency-Key"
 
 
 gateway_client_settings: typing.Final = GatewayClientSettings()

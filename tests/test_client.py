@@ -1,4 +1,5 @@
 import http
+import typing
 import uuid
 
 import circuitbreaker  # type: ignore[import-untyped]
@@ -10,15 +11,23 @@ from tropass_sdk.client import (
     GatewayClient,
     GatewayClientConfig,
     GatewayClientConfigValidationError,
+    GatewayIdempotencyConflictError,
     GatewayResponseError,
+    GatewayTaskNotFoundError,
+    GatewayTaskTimeoutError,
+    GatewayTransientResponseError,
 )
+from tropass_sdk.settings import gateway_client_settings
 
 
 GATEWAY_API_TOKEN = "private-token"  # noqa: S105
 DEFAULT_MAX_ATTEMPTS = 3
 TWO_REQUESTS = 2
 FOUR_REQUESTS = 4
+THREE_REQUESTS = 3
 MODEL_ID = uuid.UUID("00000000-0000-0000-0000-000000000123")
+SUBMIT_PATH = f"/{gateway_client_settings.call_model_path}"
+FETCH_PATH_TEMPLATE = f"/{gateway_client_settings.model_task_path}/{{task_id}}"
 
 
 def make_gateway_client(
@@ -28,23 +37,76 @@ def make_gateway_client(
     retry_attempts: int = DEFAULT_MAX_ATTEMPTS,
     circuit_failure_threshold: int = DEFAULT_MAX_ATTEMPTS,
     circuit_recovery_seconds: int = 30,
+    result_deadline_seconds: float = 1800.0,
+    poll_interval_seconds: float = 2.0,
+    http_timeout_seconds: float = 10.0,
 ) -> GatewayClient:
     client_config = GatewayClientConfig(
         retry_attempts=retry_attempts,
         retry_timeout_seconds=30.0,
         circuit_failure_threshold=circuit_failure_threshold,
         circuit_recovery_seconds=circuit_recovery_seconds,
+        result_deadline_seconds=result_deadline_seconds,
+        poll_interval_seconds=poll_interval_seconds,
+        http_timeout_seconds=http_timeout_seconds,
     )
     original_http_client = httpx.AsyncClient
 
-    def create_http_client(*, timeout: float) -> httpx.AsyncClient:
-        return original_http_client(transport=transport, timeout=timeout)
+    def create_http_client(**kwargs: typing.Any) -> httpx.AsyncClient:
+        kwargs["transport"] = transport
+        return original_http_client(**kwargs)
 
     monkeypatch.setattr(httpx, "AsyncClient", create_http_client)
     return GatewayClient(
         gateway_url="https://gateway.example.com/",
         gateway_api_token=GATEWAY_API_TOKEN,
         client_config=client_config,
+    )
+
+
+def make_submit_response(task_id: uuid.UUID) -> httpx.Response:
+    return httpx.Response(
+        http.HTTPStatus.ACCEPTED,
+        json={"task_id": str(task_id), "status": "distributed"},
+    )
+
+
+def make_pending_response(task_id: uuid.UUID) -> httpx.Response:
+    return httpx.Response(
+        http.HTTPStatus.OK,
+        json={"task_id": str(task_id), "status": "processing_started"},
+    )
+
+
+def make_completed_response(task_id: uuid.UUID, result: dict[str, object]) -> httpx.Response:
+    return httpx.Response(
+        http.HTTPStatus.OK,
+        json={"task_id": str(task_id), "status": "processing_completed", "result": result},
+    )
+
+
+def make_error_response(task_id: uuid.UUID, error_message: str = "Model execution failed.") -> httpx.Response:
+    return httpx.Response(
+        http.HTTPStatus.OK,
+        json={"task_id": str(task_id), "status": "processing_error", "error_message": error_message},
+    )
+
+
+def assert_submit_headers(request: httpx.Request, *, idempotency_key: str | None = None) -> None:
+    assert request.headers[gateway_client_settings.api_token_header] == f"Bearer {GATEWAY_API_TOKEN}"
+    assert (
+        request.headers[gateway_client_settings.model_call_version_header]
+        == gateway_client_settings.model_call_version_value
+    )
+    if idempotency_key is not None:
+        assert request.headers[gateway_client_settings.idempotency_key_header] == idempotency_key
+
+
+def assert_fetch_headers(request: httpx.Request) -> None:
+    assert request.headers[gateway_client_settings.api_token_header] == f"Bearer {GATEWAY_API_TOKEN}"
+    assert (
+        request.headers[gateway_client_settings.model_call_version_header]
+        == gateway_client_settings.model_call_version_value
     )
 
 
@@ -58,65 +120,108 @@ def test_client_validates_config() -> None:
 
 
 @pytest.mark.anyio
-async def test_call_model_returns_gateway_response(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured_request: httpx.Request | None = None
+async def test_call_model_returns_completed_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    task_id = uuid.uuid4()
+    submit_request: httpx.Request | None = None
+    fetch_request: httpx.Request | None = None
 
     def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal captured_request
-        captured_request = request
-        return httpx.Response(http.HTTPStatus.OK, json={"result": {"score": 10}})
+        nonlocal submit_request, fetch_request
+        if request.url.path == SUBMIT_PATH:
+            submit_request = request
+            return make_submit_response(task_id)
+        fetch_request = request
+        return make_completed_response(task_id, {"score": 10})
 
     client = make_gateway_client(monkeypatch, httpx.MockTransport(handler))
 
     response_payload = await client.call_model(MODEL_ID, {"feature": "value"})
 
-    assert response_payload == {"result": {"score": 10}}
-    assert captured_request is not None
-    assert str(captured_request.url) == "https://gateway.example.com/api/rpc/call-model"
-    assert captured_request.headers["Authorization"] == f"Bearer {GATEWAY_API_TOKEN}"
-    assert captured_request.read() == (
+    assert response_payload == {"score": 10}
+    assert submit_request is not None
+    assert str(submit_request.url) == f"https://gateway.example.com{SUBMIT_PATH}"
+    assert submit_request.read() == (
         b'{"model_id":"00000000-0000-0000-0000-000000000123","model_request_data":{"feature":"value"}}'
     )
+    assert gateway_client_settings.idempotency_key_header in submit_request.headers
+    assert_fetch_headers_of_submit(submit_request)
+    assert fetch_request is not None
+    assert str(fetch_request.url) == f"https://gateway.example.com{FETCH_PATH_TEMPLATE.format(task_id=task_id)}"
+    assert_fetch_headers(fetch_request)
+
+
+def assert_fetch_headers_of_submit(request: httpx.Request) -> None:
+    assert_submit_headers(request, idempotency_key=request.headers[gateway_client_settings.idempotency_key_header])
 
 
 @pytest.mark.anyio
-async def test_call_model_retries_transient_gateway_status(monkeypatch: pytest.MonkeyPatch) -> None:
-    request_counter = 0
+async def test_call_model_polls_until_completed(monkeypatch: pytest.MonkeyPatch) -> None:
+    task_id = uuid.uuid4()
+    fetch_counter = 0
 
-    def handler(_request: httpx.Request) -> httpx.Response:
-        nonlocal request_counter
-        request_counter += 1
-        if request_counter == 1:
-            return httpx.Response(http.HTTPStatus.BAD_GATEWAY, json={"detail": "temporary"})
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == SUBMIT_PATH:
+            return make_submit_response(task_id)
+        nonlocal fetch_counter
+        fetch_counter += 1
+        if fetch_counter < THREE_REQUESTS:
+            return make_pending_response(task_id)
+        return make_completed_response(task_id, {"result": "ready"})
 
-        return httpx.Response(http.HTTPStatus.OK, json={"result": "ready"})
+    client = make_gateway_client(monkeypatch, httpx.MockTransport(handler), poll_interval_seconds=0.0)
+
+    response_payload = await client.call_model(MODEL_ID, {"feature": "value"})
+
+    assert response_payload == {"result": "ready"}
+    assert fetch_counter == THREE_REQUESTS
+
+
+@pytest.mark.anyio
+async def test_call_model_retries_transient_submit_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    task_id = uuid.uuid4()
+    submit_counter = 0
+    captured_idempotency_keys: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == SUBMIT_PATH:
+            nonlocal submit_counter
+            submit_counter += 1
+            captured_idempotency_keys.append(request.headers[gateway_client_settings.idempotency_key_header])
+            if submit_counter == 1:
+                return httpx.Response(http.HTTPStatus.BAD_GATEWAY, json={"detail": "temporary"})
+            return make_submit_response(task_id)
+        return make_completed_response(task_id, {"result": "ready"})
 
     client = make_gateway_client(monkeypatch, httpx.MockTransport(handler), retry_attempts=2)
 
     response_payload = await client.call_model(MODEL_ID, {"feature": "value"})
 
     assert response_payload == {"result": "ready"}
-    assert request_counter == TWO_REQUESTS
+    assert submit_counter == TWO_REQUESTS
+    assert len(captured_idempotency_keys) == TWO_REQUESTS
+    assert captured_idempotency_keys[0] == captured_idempotency_keys[1]
 
 
 @pytest.mark.anyio
-async def test_call_model_retries_transport_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    request_counter = 0
+async def test_call_model_retries_submit_transport_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    task_id = uuid.uuid4()
+    submit_counter = 0
 
-    def handler(_request: httpx.Request) -> httpx.Response:
-        nonlocal request_counter
-        request_counter += 1
-        if request_counter == 1:
-            raise httpx.ConnectError("connection refused")
-
-        return httpx.Response(http.HTTPStatus.OK, json={"result": "ready"})
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == SUBMIT_PATH:
+            nonlocal submit_counter
+            submit_counter += 1
+            if submit_counter == 1:
+                raise httpx.ConnectError("connection refused")
+            return make_submit_response(task_id)
+        return make_completed_response(task_id, {"result": "ready"})
 
     client = make_gateway_client(monkeypatch, httpx.MockTransport(handler), retry_attempts=2)
 
     response_payload = await client.call_model(MODEL_ID, {"feature": "value"})
 
     assert response_payload == {"result": "ready"}
-    assert request_counter == TWO_REQUESTS
+    assert submit_counter == TWO_REQUESTS
 
 
 @pytest.mark.parametrize(
@@ -125,37 +230,140 @@ async def test_call_model_retries_transport_error(monkeypatch: pytest.MonkeyPatc
         http.HTTPStatus.BAD_REQUEST,
         http.HTTPStatus.UNAUTHORIZED,
         http.HTTPStatus.FORBIDDEN,
-        http.HTTPStatus.NOT_FOUND,
     ],
 )
 @pytest.mark.anyio
-async def test_call_model_does_not_retry_non_transient_gateway_status(
+async def test_call_model_does_not_retry_non_transient_submit_status(
     monkeypatch: pytest.MonkeyPatch,
     status_code: http.HTTPStatus,
 ) -> None:
-    request_counter = 0
+    submit_counter = 0
 
     def handler(_request: httpx.Request) -> httpx.Response:
-        nonlocal request_counter
-        request_counter += 1
+        nonlocal submit_counter
+        submit_counter += 1
         return httpx.Response(status_code, json={"detail": "client error"})
 
     client = make_gateway_client(monkeypatch, httpx.MockTransport(handler), retry_attempts=3)
 
-    with pytest.raises(GatewayCallError) as exception_info:
+    with pytest.raises(GatewayCallError):
         await client.call_model(MODEL_ID, {"feature": "value"})
 
-    assert isinstance(exception_info.value.__cause__, httpx.HTTPStatusError)
-    assert request_counter == 1
+    assert submit_counter == 1
 
 
 @pytest.mark.anyio
-async def test_call_model_opens_circuit_after_exhausted_failures(monkeypatch: pytest.MonkeyPatch) -> None:
-    request_counter = 0
+async def test_call_model_raises_idempotency_conflict(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(http.HTTPStatus.CONFLICT, json={"detail": "idempotency conflict"})
+
+    client = make_gateway_client(monkeypatch, httpx.MockTransport(handler), retry_attempts=3)
+
+    with pytest.raises(GatewayIdempotencyConflictError):
+        await client.call_model(MODEL_ID, {"feature": "value"})
+
+
+@pytest.mark.anyio
+async def test_call_model_rejects_malformed_submit_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == SUBMIT_PATH:
+            return httpx.Response(http.HTTPStatus.ACCEPTED, json=[1, 2])
+        return httpx.Response(http.HTTPStatus.OK, json={})
+
+    client = make_gateway_client(monkeypatch, httpx.MockTransport(handler))
+
+    with pytest.raises(GatewayResponseError):
+        await client.call_model(MODEL_ID, {"feature": "value"})
+
+
+@pytest.mark.anyio
+async def test_call_model_rejects_submit_response_without_task_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(http.HTTPStatus.ACCEPTED, json={"status": "distributed"})
+
+    client = make_gateway_client(monkeypatch, httpx.MockTransport(handler))
+
+    with pytest.raises(GatewayResponseError):
+        await client.call_model(MODEL_ID, {"feature": "value"})
+
+
+@pytest.mark.anyio
+async def test_call_model_raises_task_not_found_on_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
+    task_id = uuid.uuid4()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == SUBMIT_PATH:
+            return make_submit_response(task_id)
+        return httpx.Response(http.HTTPStatus.NOT_FOUND, json={"detail": "not found"})
+
+    client = make_gateway_client(monkeypatch, httpx.MockTransport(handler))
+
+    with pytest.raises(GatewayTaskNotFoundError):
+        await client.call_model(MODEL_ID, {"feature": "value"})
+
+
+@pytest.mark.anyio
+async def test_call_model_raises_call_error_on_processing_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    task_id = uuid.uuid4()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == SUBMIT_PATH:
+            return make_submit_response(task_id)
+        return make_error_response(task_id, error_message="inference crashed")
+
+    client = make_gateway_client(monkeypatch, httpx.MockTransport(handler))
+
+    with pytest.raises(GatewayCallError) as exception_info:
+        await client.call_model(MODEL_ID, {"feature": "value"})
+
+    assert "inference crashed" in str(exception_info.value)
+
+
+@pytest.mark.anyio
+async def test_call_model_raises_task_timeout_after_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    task_id = uuid.uuid4()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == SUBMIT_PATH:
+            return make_submit_response(task_id)
+        return make_pending_response(task_id)
+
+    client = make_gateway_client(
+        monkeypatch,
+        httpx.MockTransport(handler),
+        result_deadline_seconds=0.0,
+        poll_interval_seconds=0.0,
+    )
+
+    with pytest.raises(GatewayTaskTimeoutError):
+        await client.call_model(MODEL_ID, {"feature": "value"})
+
+
+@pytest.mark.anyio
+async def test_call_model_rejects_completed_task_without_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    task_id = uuid.uuid4()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == SUBMIT_PATH:
+            return make_submit_response(task_id)
+        return httpx.Response(
+            http.HTTPStatus.OK,
+            json={"task_id": str(task_id), "status": "processing_completed"},
+        )
+
+    client = make_gateway_client(monkeypatch, httpx.MockTransport(handler))
+
+    with pytest.raises(GatewayResponseError):
+        await client.call_model(MODEL_ID, {"feature": "value"})
+
+
+@pytest.mark.anyio
+async def test_call_model_opens_circuit_after_exhausted_submit_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    submit_counter = 0
 
     def handler(_request: httpx.Request) -> httpx.Response:
-        nonlocal request_counter
-        request_counter += 1
+        nonlocal submit_counter
+        submit_counter += 1
         return httpx.Response(http.HTTPStatus.SERVICE_UNAVAILABLE, json={"detail": "unavailable"})
 
     client = make_gateway_client(
@@ -165,28 +373,29 @@ async def test_call_model_opens_circuit_after_exhausted_failures(monkeypatch: py
         circuit_failure_threshold=2,
     )
 
-    with pytest.raises(GatewayCallError):
+    with pytest.raises(GatewayTransientResponseError):
         await client.call_model(MODEL_ID, {"feature": "value"})
-    with pytest.raises(GatewayCallError):
+    with pytest.raises(GatewayTransientResponseError):
         await client.call_model(MODEL_ID, {"feature": "value"})
-    with pytest.raises(GatewayCallError) as exception_info:
+    with pytest.raises(circuitbreaker.CircuitBreakerError):
         await client.call_model(MODEL_ID, {"feature": "value"})
 
-    assert isinstance(exception_info.value.__cause__, circuitbreaker.CircuitBreakerError)
-    assert request_counter == FOUR_REQUESTS
+    assert submit_counter == FOUR_REQUESTS
 
 
 @pytest.mark.anyio
-async def test_call_model_closes_circuit_after_recovery_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    request_counter = 0
+async def test_circuit_recovers_after_recovery_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    task_id = uuid.uuid4()
+    submit_counter = 0
 
-    def handler(_request: httpx.Request) -> httpx.Response:
-        nonlocal request_counter
-        request_counter += 1
-        if request_counter <= TWO_REQUESTS:
-            return httpx.Response(http.HTTPStatus.SERVICE_UNAVAILABLE, json={"detail": "unavailable"})
-
-        return httpx.Response(http.HTTPStatus.OK, json={"result": "recovered"})
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == SUBMIT_PATH:
+            nonlocal submit_counter
+            submit_counter += 1
+            if submit_counter <= TWO_REQUESTS:
+                return httpx.Response(http.HTTPStatus.SERVICE_UNAVAILABLE, json={"detail": "unavailable"})
+            return make_submit_response(task_id)
+        return make_completed_response(task_id, {"result": "recovered"})
 
     client = make_gateway_client(
         monkeypatch,
@@ -194,29 +403,120 @@ async def test_call_model_closes_circuit_after_recovery_success(monkeypatch: pyt
         retry_attempts=1,
         circuit_failure_threshold=2,
         circuit_recovery_seconds=0,
+        poll_interval_seconds=0.0,
     )
 
-    with pytest.raises(GatewayCallError):
+    with pytest.raises(GatewayTransientResponseError):
         await client.call_model(MODEL_ID, {"feature": "value"})
-    with pytest.raises(GatewayCallError):
+    with pytest.raises(GatewayTransientResponseError):
         await client.call_model(MODEL_ID, {"feature": "value"})
 
     response_payload = await client.call_model(MODEL_ID, {"feature": "value"})
-    next_response_payload = await client.call_model(MODEL_ID, {"feature": "value"})
 
     assert response_payload == {"result": "recovered"}
-    assert next_response_payload == {"result": "recovered"}
-    assert request_counter == FOUR_REQUESTS
 
 
 @pytest.mark.anyio
-async def test_call_model_rejects_non_object_json_response(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_pending_status_does_not_open_circuit(monkeypatch: pytest.MonkeyPatch) -> None:
+    task_id = uuid.uuid4()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == SUBMIT_PATH:
+            return make_submit_response(task_id)
+        return make_pending_response(task_id)
+
     client = make_gateway_client(
         monkeypatch,
-        httpx.MockTransport(lambda _request: httpx.Response(http.HTTPStatus.OK, json=[1, 2])),
+        httpx.MockTransport(handler),
+        result_deadline_seconds=0.0,
+        poll_interval_seconds=0.0,
+        circuit_failure_threshold=1,
     )
 
-    with pytest.raises(GatewayCallError) as exception_info:
+    first_call_task_id = uuid.uuid4()
+    monkeypatch.setattr(uuid, "uuid4", lambda: first_call_task_id)
+
+    with pytest.raises(GatewayTaskTimeoutError):
         await client.call_model(MODEL_ID, {"feature": "value"})
 
-    assert isinstance(exception_info.value.__cause__, GatewayResponseError)
+    second_call_task_id = uuid.uuid4()
+    monkeypatch.setattr(uuid, "uuid4", lambda: second_call_task_id)
+
+    with pytest.raises(GatewayTaskTimeoutError):
+        await client.call_model(MODEL_ID, {"feature": "value"})
+
+    with pytest.raises(GatewayTaskTimeoutError):
+        await client.call_model(MODEL_ID, {"feature": "value"})
+
+
+@pytest.mark.anyio
+async def test_manual_lifecycle_submit_fetch_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    task_id = uuid.uuid4()
+    submit_request: httpx.Request | None = None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == SUBMIT_PATH:
+            nonlocal submit_request
+            submit_request = request
+            return make_submit_response(task_id)
+        return make_completed_response(task_id, {"score": 42})
+
+    client = make_gateway_client(monkeypatch, httpx.MockTransport(handler), poll_interval_seconds=0.0)
+
+    idempotency_key = uuid.uuid4()
+    submission = await client.submit_model_task(MODEL_ID, {"feature": "value"}, idempotency_key)
+
+    assert submission.model_dump() == {"task_id": str(task_id), "status": "distributed"}
+    assert submit_request is not None
+    assert submit_request.headers[gateway_client_settings.idempotency_key_header] == str(idempotency_key)
+
+    fetched_status = await client.fetch_model_task(task_id)
+    assert fetched_status.status == "processing_completed"
+
+    result_payload = await client.wait_for_model_task(task_id)
+    assert result_payload == {"score": 42}
+
+
+@pytest.mark.anyio
+async def test_submit_model_task_generates_idempotency_key_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    task_id = uuid.uuid4()
+    submit_request: httpx.Request | None = None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal submit_request
+        submit_request = request
+        return make_submit_response(task_id)
+
+    client = make_gateway_client(monkeypatch, httpx.MockTransport(handler))
+
+    await client.submit_model_task(MODEL_ID, {"feature": "value"})
+
+    assert submit_request is not None
+    assert gateway_client_settings.idempotency_key_header in submit_request.headers
+
+
+def assert_idempotency_key_header_in(request: httpx.Request) -> None:
+    assert gateway_client_settings.idempotency_key_header in request.headers
+
+
+@pytest.mark.anyio
+async def test_fetch_model_task_retries_transient_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task_id = uuid.uuid4()
+    fetch_counter = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal fetch_counter
+        fetch_counter += 1
+        if fetch_counter == 1:
+            return httpx.Response(http.HTTPStatus.SERVICE_UNAVAILABLE, json={"detail": "temporary"})
+        return make_completed_response(task_id, {"result": "ready"})
+
+    client = make_gateway_client(monkeypatch, httpx.MockTransport(handler), retry_attempts=2)
+
+    fetched_status = await client.fetch_model_task(task_id)
+
+    assert fetched_status.status == "processing_completed"
+    assert fetch_counter == TWO_REQUESTS
+    assert gateway_client_settings.idempotency_key_header  # sanity

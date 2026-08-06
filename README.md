@@ -144,12 +144,45 @@ async def call_gateway_model() -> dict[str, typing.Any]:
 Внутри `call_model`:
 
 1. генерирует `Idempotency-Key` (uuid4) и отправляет `POST api/rpc/call-model` с заголовком
-   `Tropass-Model-Call-Version: 2`;
+   `Tropass-Model-Call-Version: 2`. Тело — форма с полем `model_payload`, содержащим JSON-строку
+   `{model_id, model_request_data}`; при передаче файлов тело становится `multipart/form-data`,
+   файлы уходят в поле `files`;
 2. получает `{task_id, status: "distributed"}`;
 3. опрашивает `GET api/rest/model-tasks/{task_id}` до терминального статуса;
 4. возвращает поле `result` финального ответа.
 
 Retry submit переиспользует тот же `Idempotency-Key`, поэтому дубликаты задач не создаются.
+
+### Передача файлов
+
+`call_model` и `submit_model_task` принимают опциональный keyword-аргумент `files` — список `GatewayFile`.
+Содержимое файла передается как `bytes`, поэтому retry submit отправляет его повторно без потерь.
+
+```python
+import uuid
+
+from tropass_sdk.client import GatewayClient, GatewayFile
+
+
+async def call_model_with_files() -> None:
+    async with GatewayClient(
+        gateway_url="https://api.tropass.me",
+        gateway_api_token="private-token",
+    ) as gateway_client:
+        await gateway_client.call_model(
+            model_id=uuid.UUID("00000000-0000-0000-0000-000000000123"),
+            model_request_data={"input_name": ["input-value"]},
+            files=[
+                GatewayFile(
+                    file_name="report.csv",
+                    file_content=b"column\nvalue\n",
+                    content_type="text/csv",
+                ),
+            ],
+        )
+```
+
+`content_type` опционален: если не указать, его определит `httpx`.
 
 ### Ручной lifecycle
 
@@ -176,7 +209,7 @@ async def manual_lifecycle() -> None:
 ```
 
 * `submit_model_task` — отправляет задачу, возвращает `{task_id, status}`. Параметр `idempotency_key`
-  опционален: без него ключ генерируется автоматически.
+  опционален: без него ключ генерируется автоматически. Параметр `files` — опциональный список `GatewayFile`.
 * `fetch_model_task` — однократный poll, возвращает текущий статус задачи.
 * `wait_for_model_task` — poll-loop до терминального статуса, возвращает `result`.
 

@@ -16,6 +16,8 @@ from tropass_sdk.settings import gateway_client_settings
 
 
 JsonDict: typing.TypeAlias = dict[str, typing.Any]
+MultipartPart: typing.TypeAlias = tuple[str | None, bytes] | tuple[str | None, bytes, str | None]
+MultipartFiles: typing.TypeAlias = list[tuple[str, MultipartPart]]
 
 T = typing.TypeVar("T", "ModelTaskSubmission", "ModelTask")
 
@@ -78,6 +80,15 @@ class ModelTask(pydantic.BaseModel):
     status: TaskStatus
     result: JsonDict | None = None
     error_message: str | None = None
+
+
+class GatewayFile(pydantic.BaseModel):
+    file_name: str
+    file_content: bytes
+    content_type: str | None = None
+
+    def build_multipart_part(self) -> MultipartPart:
+        return self.file_name, self.file_content, self.content_type
 
 
 @dataclasses.dataclass(kw_only=True, slots=True)
@@ -159,8 +170,14 @@ class GatewayClient:
     async def close(self) -> None:
         await self.http_client.aclose()
 
-    async def call_model(self, model_id: uuid.UUID, model_request_data: JsonDict) -> JsonDict:
-        submission = await self.submit_model_task(model_id, model_request_data, uuid.uuid4())
+    async def call_model(
+        self,
+        model_id: uuid.UUID,
+        model_request_data: JsonDict,
+        *,
+        files: list[GatewayFile] | None = None,
+    ) -> JsonDict:
+        submission = await self.submit_model_task(model_id, model_request_data, uuid.uuid4(), files=files)
         return await self.wait_for_model_task(uuid.UUID(submission.task_id))
 
     async def submit_model_task(
@@ -168,16 +185,21 @@ class GatewayClient:
         model_id: uuid.UUID,
         model_request_data: JsonDict,
         idempotency_key: uuid.UUID | None = None,
+        *,
+        files: list[GatewayFile] | None = None,
     ) -> ModelTaskSubmission:
         return await self._submit_request(
             "POST",
             gateway_client_settings.call_model_path,
             ModelTaskSubmission,
             is_submit=True,
-            json=ModelTaskSubmitRequest(
-                model_id=model_id,
-                model_request_data=model_request_data,
-            ).model_dump(mode="json"),
+            data={
+                gateway_client_settings.model_payload_form_field: ModelTaskSubmitRequest(
+                    model_id=model_id,
+                    model_request_data=model_request_data,
+                ).model_dump_json(),
+            },
+            files=_build_multipart_files(files),
             idempotency_key=idempotency_key or uuid.uuid4(),
         )
 
@@ -196,14 +218,16 @@ class GatewayClient:
         model_cls: type[T],
         *,
         is_submit: bool,
-        json: JsonDict | None = None,
+        data: dict[str, str] | None = None,
+        files: MultipartFiles | None = None,
         idempotency_key: uuid.UUID | None = None,
     ) -> T:
         response = await self.http_client.request(
             method,
             path,
             headers=self._build_headers(idempotency_key),
-            json=json,
+            data=data,
+            files=files,
         )
         self._raise_for_status(response, is_submit=is_submit)
         return _parse_response(response, model_cls)
@@ -242,6 +266,13 @@ class GatewayClient:
         if _is_transient_status(response.status_code):
             raise GatewayTransientResponseError(f"Gateway returned retryable status {response.status_code}")
         raise GatewayCallError(f"Gateway rejected with status {response.status_code}")
+
+
+def _build_multipart_files(files: list[GatewayFile] | None) -> MultipartFiles:
+    return [
+        (gateway_client_settings.model_files_form_field, gateway_file.build_multipart_part())
+        for gateway_file in files or []
+    ]
 
 
 def _is_transient_status(status_code: int) -> bool:

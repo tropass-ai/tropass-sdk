@@ -27,6 +27,8 @@ class GatewayClientSettings(BaseSettings):
     model_call_version_header: str = "Tropass-Model-Call-Version"
     model_call_version_value: str = "2"
     idempotency_key_header: str = "Idempotency-Key"
+    model_payload_form_field: str = "model_payload"
+    model_files_form_field: str = "files"
 
 
 gateway_client_settings: typing.Final = GatewayClientSettings()

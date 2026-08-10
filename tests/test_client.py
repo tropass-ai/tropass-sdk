@@ -1,9 +1,13 @@
 import http
+import json
 import typing
 import uuid
 
 import circuitbreaker  # type: ignore[import-untyped]
+import fastapi
+import fastapi.responses
 import httpx
+import pydantic
 import pytest
 
 from tropass_sdk.client import (
@@ -11,11 +15,13 @@ from tropass_sdk.client import (
     GatewayClient,
     GatewayClientConfig,
     GatewayClientConfigValidationError,
+    GatewayFile,
     GatewayIdempotencyConflictError,
     GatewayResponseError,
     GatewayTaskNotFoundError,
     GatewayTaskTimeoutError,
     GatewayTransientResponseError,
+    JsonDict,
 )
 from tropass_sdk.settings import gateway_client_settings
 
@@ -26,6 +32,7 @@ TWO_REQUESTS = 2
 FOUR_REQUESTS = 4
 THREE_REQUESTS = 3
 MODEL_ID = uuid.UUID("00000000-0000-0000-0000-000000000123")
+SUBMITTED_TASK_ID = uuid.UUID("00000000-0000-0000-0000-000000000456")
 SUBMIT_PATH = f"/{gateway_client_settings.call_model_path}"
 FETCH_PATH_TEMPLATE = f"/{gateway_client_settings.model_task_path}/{{task_id}}"
 
@@ -92,6 +99,69 @@ def make_error_response(task_id: uuid.UUID, error_message: str = "Model executio
     )
 
 
+class SubmittedModelCall(pydantic.BaseModel):
+    model_payload: JsonDict
+    uploaded_files: list[GatewayFile]
+
+
+def build_gateway_application(
+    submitted_calls: list[SubmittedModelCall],
+    *,
+    transient_failures: int = 0,
+) -> fastapi.FastAPI:
+    gateway_application = fastapi.FastAPI()
+
+    @gateway_application.post(SUBMIT_PATH)
+    async def call_model(
+        model_payload: typing.Annotated[str, fastapi.Form(alias=gateway_client_settings.model_payload_form_field)],
+        files: typing.Annotated[
+            list[fastapi.UploadFile] | None,
+            fastapi.File(alias=gateway_client_settings.model_files_form_field),
+        ] = None,
+    ) -> fastapi.Response:
+        submitted_calls.append(
+            SubmittedModelCall(
+                model_payload=json.loads(model_payload),
+                uploaded_files=[
+                    GatewayFile(
+                        file_name=uploaded_file.filename or "",
+                        file_content=await uploaded_file.read(),
+                        content_type=uploaded_file.content_type,
+                    )
+                    for uploaded_file in files or []
+                ],
+            ),
+        )
+        if len(submitted_calls) <= transient_failures:
+            return fastapi.responses.JSONResponse(
+                status_code=http.HTTPStatus.BAD_GATEWAY,
+                content={"detail": "temporary"},
+            )
+        return fastapi.responses.JSONResponse(
+            status_code=http.HTTPStatus.ACCEPTED,
+            content={"task_id": str(SUBMITTED_TASK_ID), "status": "distributed"},
+        )
+
+    @gateway_application.get(FETCH_PATH_TEMPLATE.format(task_id="{task_id}"))
+    async def fetch_model_task(task_id: str) -> JsonDict:
+        return {"task_id": task_id, "status": "processing_completed", "result": {"score": 10}}
+
+    return gateway_application
+
+
+def assert_submitted_call(
+    submitted_call: SubmittedModelCall,
+    *,
+    model_request_data: JsonDict,
+    expected_files: list[GatewayFile] | None = None,
+) -> None:
+    assert submitted_call.model_payload == {
+        "model_id": str(MODEL_ID),
+        "model_request_data": model_request_data,
+    }
+    assert submitted_call.uploaded_files == (expected_files or [])
+
+
 def assert_submit_headers(request: httpx.Request, *, idempotency_key: str | None = None) -> None:
     assert request.headers[gateway_client_settings.api_token_header] == f"Bearer {GATEWAY_API_TOKEN}"
     assert (
@@ -140,14 +210,56 @@ async def test_call_model_returns_completed_result(monkeypatch: pytest.MonkeyPat
     assert response_payload == {"score": 10}
     assert submit_request is not None
     assert str(submit_request.url) == f"https://gateway.example.com{SUBMIT_PATH}"
-    assert submit_request.read() == (
-        b'{"model_id":"00000000-0000-0000-0000-000000000123","model_request_data":{"feature":"value"}}'
-    )
     assert gateway_client_settings.idempotency_key_header in submit_request.headers
     assert_fetch_headers_of_submit(submit_request)
     assert fetch_request is not None
     assert str(fetch_request.url) == f"https://gateway.example.com{FETCH_PATH_TEMPLATE.format(task_id=task_id)}"
     assert_fetch_headers(fetch_request)
+
+
+@pytest.mark.anyio
+async def test_call_model_submits_payload_readable_by_gateway(monkeypatch: pytest.MonkeyPatch) -> None:
+    submitted_calls: list[SubmittedModelCall] = []
+    gateway_application = build_gateway_application(submitted_calls)
+    client = make_gateway_client(monkeypatch, httpx.ASGITransport(app=gateway_application))
+
+    response_payload = await client.call_model(MODEL_ID, {"feature": "value"})
+
+    assert response_payload == {"score": 10}
+    assert len(submitted_calls) == 1
+    assert_submitted_call(submitted_calls[0], model_request_data={"feature": "value"})
+
+
+@pytest.mark.anyio
+async def test_call_model_sends_files_readable_by_gateway(monkeypatch: pytest.MonkeyPatch) -> None:
+    submitted_calls: list[SubmittedModelCall] = []
+    uploaded_files = [
+        GatewayFile(file_name="report.csv", file_content=b"column\nvalue\n", content_type="text/csv"),
+        GatewayFile(file_name="picture.png", file_content=b"\x89PNG\r\n", content_type="image/png"),
+    ]
+    gateway_application = build_gateway_application(submitted_calls)
+    client = make_gateway_client(monkeypatch, httpx.ASGITransport(app=gateway_application))
+
+    response_payload = await client.call_model(MODEL_ID, {"feature": "value"}, files=uploaded_files)
+
+    assert response_payload == {"score": 10}
+    assert len(submitted_calls) == 1
+    assert_submitted_call(submitted_calls[0], model_request_data={"feature": "value"}, expected_files=uploaded_files)
+
+
+@pytest.mark.anyio
+async def test_submit_model_task_retries_preserve_file_content(monkeypatch: pytest.MonkeyPatch) -> None:
+    submitted_calls: list[SubmittedModelCall] = []
+    uploaded_files = [GatewayFile(file_name="report.csv", file_content=b"column\nvalue\n", content_type="text/csv")]
+    gateway_application = build_gateway_application(submitted_calls, transient_failures=1)
+    client = make_gateway_client(monkeypatch, httpx.ASGITransport(app=gateway_application), retry_attempts=2)
+
+    submission = await client.submit_model_task(MODEL_ID, {"feature": "value"}, files=uploaded_files)
+
+    assert submission.task_id == str(SUBMITTED_TASK_ID)
+    assert len(submitted_calls) == TWO_REQUESTS
+    for submitted_call in submitted_calls:
+        assert_submitted_call(submitted_call, model_request_data={"feature": "value"}, expected_files=uploaded_files)
 
 
 def assert_fetch_headers_of_submit(request: httpx.Request) -> None:
